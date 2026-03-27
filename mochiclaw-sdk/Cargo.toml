@@ -1,0 +1,11 @@
+[package]
+name = "mochiclaw-sdk"
+version.workspace = true
+edition.workspace = true
+description = "Mochiclaw SDK - Shared types for host and plugins"
+
+[dependencies]
+async-trait = "0.1"
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+extism-pdk = "1"

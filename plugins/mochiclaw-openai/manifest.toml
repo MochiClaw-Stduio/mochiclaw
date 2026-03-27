@@ -1,0 +1,11 @@
+name = "mochiclaw-openai"
+version = "0.1.0"
+description = "OpenAI-compatible provider plugin for Mochiclaw"
+
+[capabilities]
+allowed_hosts = [
+    "*",
+]
+
+[features]
+provider = true

@@ -1,0 +1,20 @@
+[package]
+name = "mochiclaw-plugin"
+version.workspace = true
+edition.workspace = true
+description = "Mochiclaw Plugin - Plugin host, manifest, and registry"
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+toml.workspace = true
+rand.workspace = true
+extism = "1"
+mochiclaw-sdk = { path = "../mochiclaw-sdk" }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }

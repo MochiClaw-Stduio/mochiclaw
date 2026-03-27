@@ -1,0 +1,12 @@
+name = "mochiclaw-weixin"
+version = "0.1.0"
+description = "WeChat channel plugin for Mochiclaw"
+
+[capabilities]
+allowed_hosts = [
+    "ilinkai.weixin.qq.com",
+    "novac2c.cdn.weixin.qq.com",
+]
+
+[features]
+channel = true
