@@ -7,6 +7,7 @@ mod channel;
 mod error;
 mod model;
 mod plugin;
+mod runtime;
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -16,6 +17,7 @@ pub use channel::ChannelConfig;
 pub use error::ConfigError;
 pub use model::ModelConfig;
 pub use plugin::PluginConfig;
+pub use runtime::{LogConfig, NetworkConfig, RuntimeConfig};
 
 /// Current configuration version
 pub const CONFIG_VERSION: u32 = 1;
@@ -27,6 +29,9 @@ pub struct Config {
     #[serde(default, rename = "version")]
     pub version: Option<u32>,
     pub agent: AgentConfig,
+    /// Runtime configuration (logging, retention, etc.)
+    #[serde(default)]
+    pub runtime: RuntimeConfig,
     /// Per-plugin configuration (key = plugin name)
     #[serde(default)]
     pub plugins: HashMap<String, PluginConfig>,
@@ -100,8 +105,17 @@ impl Config {
                 model: "gpt-4".to_string(),
                 max_iterations: 40,
                 workspace: ".".to_string(),
+            },
+            runtime: RuntimeConfig {
                 plugin_dirs: vec!["./plugins".to_string()],
-                use_system_proxy: false,
+                log: LogConfig {
+                    level: "info".to_string(),
+                    dir: None,
+                    max_age_days: None,
+                },
+                network: NetworkConfig {
+                    use_system_proxy: false,
+                },
             },
             plugins: HashMap::new(),
             channels: HashMap::new(),

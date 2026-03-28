@@ -15,18 +15,18 @@ pub async fn start(config_path: PathBuf) -> Result<()> {
     tracing::info!("agent model: {}", config.agent.model);
 
     // Create plugin host with optional fallback proxy from HTTP_PROXY
-    let fallback_proxy = if config.agent.use_system_proxy {
+    let fallback_proxy = if config.runtime.network.use_system_proxy {
         std::env::var("HTTP_PROXY").ok()
     } else {
         None
     };
-    tracing::info!("use_system_proxy={}, fallback_proxy={:?}", config.agent.use_system_proxy, fallback_proxy);
+    tracing::info!("use_system_proxy={}, fallback_proxy={:?}", config.runtime.network.use_system_proxy, fallback_proxy);
     let plugin_host = Arc::new(tokio::sync::Mutex::new(
-        PluginHost::new().with_http_proxy(fallback_proxy, config.agent.use_system_proxy)
+        PluginHost::new().with_http_proxy(fallback_proxy, config.runtime.network.use_system_proxy)
     ));
 
     // Discover and load plugins based on features
-    for dir in &config.agent.plugin_dirs {
+    for dir in &config.runtime.plugin_dirs {
         let plugin_base_dir = PathBuf::from(dir);
         tracing::info!("scanning for plugins in {}", plugin_base_dir.display());
 

@@ -14,12 +14,6 @@ pub struct AgentConfig {
     /// Workspace directory for sessions and other data
     #[serde(default = "default_workspace")]
     pub workspace: String,
-    /// Directories to scan for plugins
-    #[serde(default)]
-    pub plugin_dirs: Vec<String>,
-    /// Whether to use system HTTP_PROXY environment variable as fallback
-    #[serde(default)]
-    pub use_system_proxy: bool,
 }
 
 fn default_model() -> String {
