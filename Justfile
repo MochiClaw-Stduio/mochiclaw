@@ -43,5 +43,5 @@ fmt:
     cargo fmt
 
 # Lint code
-lint:
+lint: build-test-plugin
     cargo clippy --all-targets --all-features -- -D warnings
