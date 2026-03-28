@@ -1637,7 +1637,6 @@ dependencies = [
 name = "mochiclaw-fs"
 version = "0.1.0"
 dependencies = [
- "extism-manifest",
  "extism-pdk",
  "mochiclaw-sdk",
  "serde",
@@ -1648,7 +1647,6 @@ dependencies = [
 name = "mochiclaw-openai"
 version = "0.1.0"
 dependencies = [
- "extism-manifest",
  "extism-pdk",
  "mochiclaw-sdk",
  "rmp-serde",
@@ -1699,7 +1697,6 @@ dependencies = [
  "aes",
  "base64",
  "cipher",
- "extism-manifest",
  "extism-pdk",
  "generic-array",
  "hex",

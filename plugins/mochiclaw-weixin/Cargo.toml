@@ -9,7 +9,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 extism-pdk = "1"
-extism-manifest = "1"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 rmp-serde = "1"

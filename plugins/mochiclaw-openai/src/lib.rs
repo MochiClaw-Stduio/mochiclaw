@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use extism_pdk::{FromBytes, ToBytes, Msgpack, *};
+use mochiclaw_sdk::{FromBytes, ToBytes, Msgpack, plugin_fn, FnResult};
 use mochiclaw_sdk::host::http::HttpClient;
 use mochiclaw_sdk::provider::{ChatRequest, ChatResponse, MessageRole, ToolCall};
 use mochiclaw_sdk::tool::Tool;

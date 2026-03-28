@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use extism_pdk::*;
+use mochiclaw_sdk::{plugin_fn, FnResult, config};
 use mochiclaw_sdk::host::fs;
 use mochiclaw_sdk::tool::{Tool, ToolExecutionRequest, ToolExecutionResponse};
 

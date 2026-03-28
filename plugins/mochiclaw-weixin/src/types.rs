@@ -2,7 +2,7 @@
 //!
 //! Type definitions for WeChat iLink HTTP API requests and responses.
 
-use extism_pdk::{FromBytes, ToBytes, Msgpack};
+use mochiclaw_sdk::{FromBytes, ToBytes, Msgpack};
 use mochiclaw_sdk::message::InboundMessage;
 use serde::{Deserialize, Serialize};
 
