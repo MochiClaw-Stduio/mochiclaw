@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use mochiclaw_core::{AgentLoop, Config, MessageBus, PluginHost, PluginManifest, discover};
+use mochiclaw_sdk::channel::{LoginParams, LoginResponse, QrStatusParams, QrStatusResponse};
 
 /// Deserialize a value from MessagePack bytes
 fn from_msgpack<'a, T: serde::Deserialize<'a>>(buf: &'a [u8]) -> Option<T> {
@@ -152,9 +153,7 @@ pub async fn login(plugin_name: &str, config_path: PathBuf) -> Result<()> {
 
     // Call login function with empty config
     let resp: LoginResponse = {
-        let login_params = LoginParams {
-            config: Vec::new(),
-        };
+        let login_params = LoginParams { config: Vec::new() };
         let params_bytes = to_msgpack(&login_params).unwrap_or_default();
         let output = plugin_host.call(plugin_name, "login", &params_bytes)?;
         match from_msgpack(&output) {
@@ -186,13 +185,11 @@ pub async fn login(plugin_name: &str, config_path: PathBuf) -> Result<()> {
         "need_qr" => {
             if let Some(qr_url) = &resp.qr_url {
                 println!();
-                println!("========== WeChat Login ==========");
+                println!("========== {} Login ==========", plugin_name);
                 println!();
-                println!("Scan this QR code with WeChat app:");
+                println!("Scan this QR code with the channel app:");
                 println!();
                 println!("{}", qr_url);
-                println!();
-                println!("Or visit: {}", qr_url);
                 println!();
                 println!("Waiting for scan...");
 
@@ -201,18 +198,19 @@ pub async fn login(plugin_name: &str, config_path: PathBuf) -> Result<()> {
                     loop {
                         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
-                        let check_resp: CheckLoginResponse = {
+                        let check_resp: QrStatusResponse = {
                             let params = QrStatusParams {
                                 temp_token: temp_token.clone(),
                             };
                             let params_bytes = to_msgpack(&params).unwrap_or_default();
-                            let output = plugin_host.call(plugin_name, "check_login", &params_bytes)?;
+                            let output =
+                                plugin_host.call(plugin_name, "check_login", &params_bytes)?;
                             match from_msgpack(&output) {
                                 Some(r) => r,
                                 None => {
                                     // Fallback: try to parse as JSON for backwards compatibility
                                     serde_json::from_str(&String::from_utf8_lossy(&output))
-                                        .unwrap_or(CheckLoginResponse {
+                                        .unwrap_or(QrStatusResponse {
                                             status: "error".to_string(),
                                             token: None,
                                             base_url: None,
@@ -323,40 +321,4 @@ fn create_default_config() -> Result<Config> {
             },
         )]),
     })
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct LoginResponse {
-    status: String,
-    #[serde(default)]
-    qr_url: Option<String>,
-    #[serde(default)]
-    temp_token: Option<String>,
-    #[serde(default)]
-    token: Option<String>,
-    #[serde(default)]
-    base_url: Option<String>,
-    #[serde(default)]
-    error: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct CheckLoginResponse {
-    status: String,
-    #[serde(default)]
-    token: Option<String>,
-    #[serde(default)]
-    base_url: Option<String>,
-    #[serde(default)]
-    error: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct LoginParams {
-    config: Vec<u8>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct QrStatusParams {
-    temp_token: String,
 }

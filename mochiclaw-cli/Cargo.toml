@@ -18,3 +18,4 @@ serde.workspace = true
 serde_json.workspace = true
 rmp-serde = "1"
 mochiclaw-core = { path = "../mochiclaw-core" }
+mochiclaw-sdk = { path = "../mochiclaw-sdk" }

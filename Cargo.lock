@@ -1571,6 +1571,7 @@ dependencies = [
  "anyhow",
  "clap",
  "mochiclaw-core",
+ "mochiclaw-sdk",
  "rmp-serde",
  "serde",
  "serde_json",

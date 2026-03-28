@@ -9,19 +9,60 @@ use extism_convert::{FromBytes, ToBytes, Msgpack};
 use crate::message::InboundMessage;
 
 // ============================================================================
-// Login / QR Code Types
+// Login Types
 // ============================================================================
 
-#[derive(Debug, Serialize, Deserialize, ToBytes)]
+/// Parameters for the login function - generic for all channel plugins
+#[derive(Debug, Serialize, Deserialize, FromBytes, ToBytes)]
 #[encoding(Msgpack)]
-pub struct QrStatusResponse {
+pub struct LoginParams {
+    /// Plugin-specific config bytes (e.g., previously saved token, credentials)
+    pub config: Vec<u8>,
+}
+
+/// Response from the login function - generic for all channel plugins
+#[derive(Debug, Clone, Serialize, Deserialize, ToBytes)]
+#[encoding(Msgpack)]
+pub struct LoginResponse {
+    /// Status: "logged_in", "need_qr", "error"
     pub status: String,
+    /// QR code URL to display if status is "need_qr"
+    #[serde(default)]
+    pub qr_url: Option<String>,
+    /// Temporary token for polling QR scan status if status is "need_qr"
+    #[serde(default)]
+    pub temp_token: Option<String>,
+    /// Auth token if already logged in or after successful login
+    #[serde(default)]
     pub token: Option<String>,
+    /// Base URL for API calls
+    #[serde(default)]
     pub base_url: Option<String>,
+    /// Error message if status is "error"
+    #[serde(default)]
     pub error: Option<String>,
 }
 
-#[derive(Debug, Deserialize, FromBytes)]
+// ============================================================================
+// QR Code Status Types
+// ============================================================================
+
+/// Response from checking QR code scan status - generic for all channel plugins
+#[derive(Debug, Clone, Serialize, Deserialize, ToBytes)]
+#[encoding(Msgpack)]
+pub struct QrStatusResponse {
+    /// Status: "confirmed", "scaned", "expired", "error", or continue polling
+    pub status: String,
+    /// Auth token if status is "confirmed"
+    pub token: Option<String>,
+    /// Base URL for API calls if status is "confirmed"
+    pub base_url: Option<String>,
+    /// Error message if status is "error"
+    pub error: Option<String>,
+}
+
+/// Parameters for checking QR code scan status
+#[derive(Debug, Serialize, Deserialize, FromBytes, ToBytes)]
 #[encoding(Msgpack)]
 pub struct QrStatusParams {
     pub temp_token: String,

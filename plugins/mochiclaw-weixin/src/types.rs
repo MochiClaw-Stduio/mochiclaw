@@ -6,27 +6,6 @@ use extism_pdk::{FromBytes, ToBytes, Msgpack};
 use mochiclaw_sdk::message::InboundMessage;
 use serde::{Deserialize, Serialize};
 
-// ============================================================================
-// Plugin-facing Request/Response Types
-// ============================================================================
-
-#[derive(Debug, Serialize, Deserialize, ToBytes)]
-#[encoding(Msgpack)]
-pub struct LoginResponse {
-    pub status: String,
-    pub qr_url: Option<String>,
-    pub temp_token: Option<String>,
-    pub token: Option<String>,
-    pub base_url: Option<String>,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Deserialize, FromBytes)]
-#[encoding(Msgpack)]
-pub struct LoginParams {
-    pub config: Vec<u8>,
-}
-
 #[derive(Debug, Deserialize, FromBytes)]
 #[encoding(Msgpack)]
 pub struct SendTextParams {
