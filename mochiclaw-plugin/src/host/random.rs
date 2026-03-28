@@ -50,13 +50,12 @@ pub fn rand_bytes_fn() -> Function {
 #[cfg(test)]
 mod integration_tests {
     use super::*;
-    use extism::{Plugin, Manifest, Wasm};
+    use extism::{Manifest, Plugin, Wasm};
     use serde::Deserialize;
 
     // WASM file for test-random plugin
-    const TEST_RANDOM_WASM: &[u8] = include_bytes!(
-        "../../../target/wasm32-unknown-unknown/release/test_random.wasm"
-    );
+    const TEST_RANDOM_WASM: &[u8] =
+        include_bytes!("../../../target/wasm32-unknown-unknown/release/test_random.wasm");
 
     fn run_plugin_with_rand<F>(f: F)
     where
@@ -81,10 +80,7 @@ mod integration_tests {
             let result: String = plugin.call("test_rand_u64", "").unwrap();
             let result: TestResult = serde_json::from_str(&result).unwrap();
             assert!(result.success);
-            // Parse the u64 value - should be a valid number
-            let value: u64 = result.message.parse().unwrap();
-            // u64 can be any value, just verify it's parseable
-            assert!(value >= 0);
+            let _value: u64 = result.message.parse().unwrap();
         });
     }
 
@@ -94,8 +90,7 @@ mod integration_tests {
             let result: String = plugin.call("test_rand_u32", "").unwrap();
             let result: TestResult = serde_json::from_str(&result).unwrap();
             assert!(result.success);
-            let value: u32 = result.message.parse().unwrap();
-            assert!(value >= 0);
+            let _value: u32 = result.message.parse().unwrap();
         });
     }
 
@@ -105,7 +100,6 @@ mod integration_tests {
             let result: String = plugin.call("test_rand_bytes", "").unwrap();
             let result: TestResult = serde_json::from_str(&result).unwrap();
             assert!(result.success);
-            // message should contain bytes in [..] format like [1, 2, 3, ...]
             assert!(result.message.starts_with('['));
             assert!(result.message.ends_with(']'));
         });
