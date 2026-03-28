@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "mochiclaw-sdk",
+    "mochiclaw-config",
     "mochiclaw-plugin",
     "mochiclaw-core",
     "mochiclaw-cli",

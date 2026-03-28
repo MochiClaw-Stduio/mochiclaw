@@ -1,6 +1,7 @@
 //! Plugin manifest schema
 
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::Path;
 use crate::error::Error as PluginError;
 
@@ -19,6 +20,20 @@ pub struct PluginManifest {
     /// Plugin features provided by this plugin
     #[serde(default)]
     pub features: Features,
+    /// Plugin-specific settings schema
+    #[serde(default)]
+    pub settings: PluginSettingsSpec,
+}
+
+/// Schema for plugin-specific settings declared in manifest
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct PluginSettingsSpec {
+    /// Human-readable description of what settings this plugin expects
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Example settings for documentation/validation
+    #[serde(default)]
+    pub example: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

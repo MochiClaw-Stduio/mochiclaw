@@ -44,12 +44,24 @@ impl Clone for HttpContext {
 
 impl HttpContext {
     /// Create a new HTTP context with optional proxy URL and allowed hosts
-    pub fn new(proxy_url: Option<String>, allowed_hosts: Vec<String>) -> anyhow::Result<Self> {
+    ///
+    /// - If `proxy_url` is Some, use it directly
+    /// - If `proxy_url` is None and `use_system_proxy` is true, reqwest uses system HTTP_PROXY
+    /// - If `proxy_url` is None and `use_system_proxy` is false, no proxy is used
+    pub fn new(
+        proxy_url: Option<String>,
+        allowed_hosts: Vec<String>,
+        use_system_proxy: bool,
+    ) -> anyhow::Result<Self> {
         let client = if let Some(ref proxy) = proxy_url {
             let proxy = reqwest::Proxy::https(proxy).or_else(|_| reqwest::Proxy::http(proxy))?;
             Client::builder().proxy(proxy).build()?
-        } else {
+        } else if use_system_proxy {
+            // No explicit proxy, but system proxy is allowed
             Client::new()
+        } else {
+            // No proxy at all - explicitly disable system proxy
+            Client::builder().no_proxy().build()?
         };
 
         Ok(Self {
@@ -59,11 +71,6 @@ impl HttpContext {
             last_status: 0,
             last_headers: HashMap::new(),
         })
-    }
-
-    /// Create a new HTTP context without proxy
-    pub fn new_without_proxy(allowed_hosts: Vec<String>) -> anyhow::Result<Self> {
-        Self::new(None, allowed_hosts)
     }
 
     /// Check if a host is allowed to be accessed

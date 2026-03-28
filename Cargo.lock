@@ -1570,6 +1570,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "mochiclaw-config",
  "mochiclaw-core",
  "mochiclaw-sdk",
  "rmp-serde",
@@ -1581,10 +1582,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "mochiclaw-config"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "toml 0.8.23",
+]
+
+[[package]]
 name = "mochiclaw-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "mochiclaw-config",
  "mochiclaw-plugin",
  "mochiclaw-sdk",
  "rand",
@@ -1618,6 +1630,7 @@ dependencies = [
  "extism",
  "extism-convert",
  "glob",
+ "mochiclaw-config",
  "mochiclaw-sdk",
  "rand",
  "reqwest",

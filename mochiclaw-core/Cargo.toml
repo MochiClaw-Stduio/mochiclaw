@@ -2,7 +2,7 @@
 name = "mochiclaw-core"
 version.workspace = true
 edition.workspace = true
-description = "Mochiclaw Core - Agent loop, message bus, config"
+description = "Mochiclaw Core - Agent loop, message bus"
 
 [dependencies]
 serde.workspace = true
@@ -17,3 +17,4 @@ rand.workspace = true
 time.workspace = true
 mochiclaw-sdk = { path = "../mochiclaw-sdk" }
 mochiclaw-plugin = { path = "../mochiclaw-plugin" }
+mochiclaw-config = { path = "../mochiclaw-config" }

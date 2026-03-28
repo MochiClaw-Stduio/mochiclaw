@@ -23,8 +23,10 @@ pub struct PluginHost {
     pools: HashMap<String, Pool>,
     /// KV store for plugin state
     kv: Arc<PluginKV>,
-    /// HTTP proxy URL (optional)
-    http_proxy_url: Option<String>,
+    /// Fallback HTTP proxy URL (from HTTP_PROXY env var when use_system_proxy=true)
+    fallback_proxy_url: Option<String>,
+    /// Whether to use system proxy when fallback_proxy_url is None
+    use_system_proxy: bool,
 }
 
 impl PluginHost {
@@ -33,22 +35,28 @@ impl PluginHost {
             compiled: HashMap::new(),
             pools: HashMap::new(),
             kv: Arc::new(PluginKV::new()),
-            http_proxy_url: std::env::var("HTTP_PROXY").ok(),
+            fallback_proxy_url: None,
+            use_system_proxy: false,
         }
     }
 
-    /// Set HTTP proxy URL
-    pub fn with_http_proxy(mut self, proxy_url: Option<String>) -> Self {
-        self.http_proxy_url = proxy_url;
+    /// Set fallback HTTP proxy URL and whether to use system proxy
+    pub fn with_http_proxy(mut self, proxy_url: Option<String>, use_system_proxy: bool) -> Self {
+        self.fallback_proxy_url = proxy_url;
+        self.use_system_proxy = use_system_proxy;
         self
     }
 
     /// Load a plugin with its manifest
+    ///
+    /// `proxy_url` is the per-plugin proxy URL (takes precedence over fallback_proxy_url).
+    /// If None, uses the fallback_proxy_url set via with_http_proxy().
     pub fn load_plugin(
         &mut self,
         name: &str,
         wasm_path: &Path,
         manifest: &PluginManifest,
+        proxy_url: Option<String>,
     ) -> Result<(), Error> {
         if self.compiled.contains_key(name) {
             return Err(Error::Plugin(format!("plugin '{}' already loaded", name)));
@@ -64,10 +72,15 @@ impl PluginHost {
         }])
         .with_allowed_hosts(manifest.capabilities.allowed_hosts.iter().cloned());
 
+        // Determine effective proxy: per-plugin proxy_url > fallback_proxy_url
+        let effective_proxy = proxy_url.or_else(|| self.fallback_proxy_url.clone());
+        tracing::debug!("loading plugin '{}', effective_proxy={:?}", name, effective_proxy);
+
         // Create host functions (rand + KV + HTTP with proxy support)
         let http_context = HttpContext::new(
-            self.http_proxy_url.clone(),
+            effective_proxy,
             manifest.capabilities.allowed_hosts.clone(),
+            self.use_system_proxy,
         )
         .map_err(|e| Error::Plugin(format!("failed to create HTTP context: {}", e)))?;
 
@@ -167,9 +180,18 @@ impl PluginHost {
         self.pools.len()
     }
 
-    /// Load a discovered plugin
+    /// Load a discovered plugin (without per-plugin proxy)
     pub fn load_discovered(&mut self, plugin: DiscoveredPlugin) -> Result<(), Error> {
-        self.load_plugin(&plugin.name, &plugin.wasm_path, &plugin.manifest)
+        self.load_plugin(&plugin.name, &plugin.wasm_path, &plugin.manifest, None)
+    }
+
+    /// Load a discovered plugin with per-plugin proxy URL
+    pub fn load_discovered_with_proxy(
+        &mut self,
+        plugin: DiscoveredPlugin,
+        proxy_url: Option<String>,
+    ) -> Result<(), Error> {
+        self.load_plugin(&plugin.name, &plugin.wasm_path, &plugin.manifest, proxy_url)
     }
 
     /// Get a reference to the KV store

@@ -2,9 +2,9 @@
 
 use crate::bus::MessageBus;
 use crate::commands::{CommandRegistry, parse_command};
-use crate::config::{ChannelConfig, Config, ModelConfig};
 use crate::error::Error;
 use crate::session::SessionManager;
+use mochiclaw_config::{ChannelConfig, Config, ModelConfig};
 use mochiclaw_plugin::PluginHost;
 use mochiclaw_sdk::channel::{PollParams, PollResponse, SendResponse, SendTextParams, SetTypingParams};
 use mochiclaw_sdk::message::InboundMessage;
@@ -41,7 +41,7 @@ impl AgentLoop {
         let channel_configs: HashMap<String, ChannelConfig> = config
             .channels
             .iter()
-            .filter(|(_, cfg)| cfg.extra.get("token").is_some())
+            .filter(|(_, cfg)| cfg.token.is_some())
             .map(|(name, cfg)| (name.clone(), cfg.clone()))
             .collect();
 
@@ -126,8 +126,8 @@ impl AgentLoop {
                 continue;
             }
 
-            // Get token from config extra
-            let token = match config.extra.get("token").and_then(|v| v.as_str()) {
+            // Get token from config
+            let token = match config.token.as_deref() {
                 Some(t) => t,
                 None => {
                     tracing::warn!("no token found for channel {}", channel_name);
@@ -341,7 +341,7 @@ impl AgentLoop {
     ) -> Result<(), Error> {
         // Get token from channel config
         let token = match self.channel_configs.get(channel_name) {
-            Some(cfg) => cfg.extra.get("token").and_then(|v| v.as_str()),
+            Some(cfg) => cfg.token.as_deref(),
             None => None,
         };
 
@@ -387,7 +387,7 @@ impl AgentLoop {
     /// This is best-effort - errors are ignored since not all plugins support it.
     async fn set_typing(&self, channel_name: &str, chat_id: &str, typing: bool) {
         let token = match self.channel_configs.get(channel_name) {
-            Some(cfg) => cfg.extra.get("token").and_then(|v| v.as_str()),
+            Some(cfg) => cfg.token.as_deref(),
             None => {
                 tracing::debug!("set_typing: no token for channel {}", channel_name);
                 return;

@@ -4,7 +4,8 @@ use anyhow::Result;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use mochiclaw_core::{AgentLoop, Config, MessageBus, PluginHost, PluginManifest, discover};
+use mochiclaw_config::{ChannelConfig, Config};
+use mochiclaw_core::{AgentLoop, MessageBus, PluginHost, PluginManifest, discover};
 use mochiclaw_sdk::channel::{LoginParams, LoginResponse, QrStatusParams, QrStatusResponse};
 
 pub async fn start(config_path: PathBuf) -> Result<()> {
@@ -13,12 +14,20 @@ pub async fn start(config_path: PathBuf) -> Result<()> {
     tracing::info!("loaded config from {}", config_path.display());
     tracing::info!("agent model: {}", config.agent.model);
 
-    // Create plugin host
-    let plugin_host = Arc::new(tokio::sync::Mutex::new(PluginHost::new()));
+    // Create plugin host with optional fallback proxy from HTTP_PROXY
+    let fallback_proxy = if config.agent.use_system_proxy {
+        std::env::var("HTTP_PROXY").ok()
+    } else {
+        None
+    };
+    tracing::info!("use_system_proxy={}, fallback_proxy={:?}", config.agent.use_system_proxy, fallback_proxy);
+    let plugin_host = Arc::new(tokio::sync::Mutex::new(
+        PluginHost::new().with_http_proxy(fallback_proxy, config.agent.use_system_proxy)
+    ));
 
     // Discover and load plugins based on features
-    for dir in &config.plugins.plugin_dirs {
-        let plugin_base_dir = PathBuf::from(&dir.path);
+    for dir in &config.agent.plugin_dirs {
+        let plugin_base_dir = PathBuf::from(dir);
         tracing::info!("scanning for plugins in {}", plugin_base_dir.display());
 
         let discovered = match discover(&plugin_base_dir) {
@@ -31,7 +40,13 @@ pub async fn start(config_path: PathBuf) -> Result<()> {
 
         let mut host = plugin_host.lock().await;
         for plugin in discovered {
-            match host.load_discovered(plugin) {
+            // Get per-plugin proxy_url if configured
+            let proxy_url = config
+                .plugins
+                .get(&plugin.name)
+                .and_then(|p| p.proxy_url.clone());
+
+            match host.load_discovered_with_proxy(plugin, proxy_url) {
                 Ok(()) => {}
                 Err(e) => {
                     tracing::warn!("failed to load plugin: {}", e);
@@ -68,36 +83,9 @@ pub async fn onboard(config_path: PathBuf) -> Result<()> {
     println!("===================");
     println!();
 
-    let config = Config {
-        agent: mochiclaw_core::config::AgentConfig {
-            model: "gpt-4".to_string(),
-            max_iterations: 40,
-            workspace: ".".to_string(),
-        },
-        plugins: mochiclaw_core::config::PluginsConfig {
-            plugin_dirs: vec![mochiclaw_core::config::PluginDirConfig {
-                path: "./plugins".to_string(),
-            }],
-        },
-        channels: std::collections::HashMap::new(),
-        models: std::collections::HashMap::from([(
-            "gpt-4".to_string(),
-            mochiclaw_core::config::ModelConfig {
-                model: "gpt-4".to_string(),
-                provider: "mochiclaw-openai".to_string(),
-                api_base: None,
-                api_key: None,
-            },
-        )]),
-    };
-
+    let config = Config::default_for_onboarding();
     config.save(&config_path)?;
     println!("created default config at {}", config_path.display());
-    println!();
-    println!("Next steps:");
-    println!("1. Build plugins: cd plugins/mochiclaw-weixin && cargo build --release");
-    println!("2. Build plugins: cd plugins/mochiclaw-openai && cargo build --release");
-    println!("3. Run: mochiclaw start");
 
     Ok(())
 }
@@ -133,7 +121,7 @@ pub async fn login(plugin_name: &str, config_path: PathBuf) -> Result<()> {
 
     // Load plugin
     let mut plugin_host = PluginHost::new();
-    plugin_host.load_plugin(plugin_name, &wasm_path, &manifest)?;
+    plugin_host.load_plugin(plugin_name, &wasm_path, &manifest, None)?;
     tracing::info!("loaded plugin '{}'", plugin_name);
 
     // Call login function with empty config
@@ -230,16 +218,14 @@ fn save_token_to_config(
     config_path: &PathBuf,
 ) -> Result<()> {
     if let Some(token) = &resp.token {
-        use mochiclaw_core::config::ChannelConfig;
-
         let mut extra = std::collections::HashMap::new();
-        extra.insert("token".to_string(), serde_json::json!(token));
         if let Some(base_url) = &resp.base_url {
             extra.insert("base_url".to_string(), serde_json::json!(base_url));
         }
 
         let channel_config = ChannelConfig {
             enabled: true,
+            token: Some(token.clone()),
             extra,
         };
         config
@@ -252,28 +238,5 @@ fn save_token_to_config(
 }
 
 fn create_default_config() -> Result<Config> {
-    use mochiclaw_core::config::{AgentConfig, ModelConfig, PluginDirConfig, PluginsConfig};
-
-    Ok(Config {
-        agent: AgentConfig {
-            model: "gpt-4".to_string(),
-            max_iterations: 40,
-            workspace: ".".to_string(),
-        },
-        plugins: PluginsConfig {
-            plugin_dirs: vec![PluginDirConfig {
-                path: "./plugins".to_string(),
-            }],
-        },
-        channels: std::collections::HashMap::new(),
-        models: std::collections::HashMap::from([(
-            "gpt-4".to_string(),
-            ModelConfig {
-                model: "gpt-4".to_string(),
-                provider: "mochiclaw-openai".to_string(),
-                api_base: None,
-                api_key: None,
-            },
-        )]),
-    })
+    Ok(Config::default_for_onboarding())
 }

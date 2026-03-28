@@ -1,0 +1,11 @@
+[package]
+name = "mochiclaw-config"
+version.workspace = true
+edition.workspace = true
+description = "Mochiclaw Configuration - Config structures shared across crates"
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+toml.workspace = true
+thiserror.workspace = true
