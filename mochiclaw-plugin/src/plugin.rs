@@ -1,22 +1,34 @@
-//! Plugin Host - manages extism WASM plugins
+//! Plugin Host - manages extism WASM plugins using Pool for concurrency
+//!
+//! This module provides concurrent plugin execution via extism's Pool mechanism.
+//! Each plugin type gets its own Pool, allowing multiple instances to run simultaneously.
 
 use crate::discover::DiscoveredPlugin;
 use crate::error::Error;
-use crate::host::host_functions;
+use crate::host::kv::PluginKV;
 use crate::manifest::PluginManifest;
-use extism::{Manifest, Wasm};
-use extism::{Plugin, PluginBuilder};
+use extism::{CompiledPlugin, Manifest, Plugin, PluginBuilder, Pool, PoolBuilder, Wasm};
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
 
+/// PluginHost manages multiple plugin pools for concurrent execution
 pub struct PluginHost {
-    plugins: HashMap<String, Plugin>,
+    /// Compiled plugins (contains JIT compiled engine) - used to create new instances
+    compiled: HashMap<String, CompiledPlugin>,
+    /// Plugin pools for concurrent execution
+    pools: HashMap<String, Pool>,
+    /// KV store for plugin state
+    kv: Arc<PluginKV>,
 }
 
 impl PluginHost {
     pub fn new() -> Self {
         Self {
-            plugins: HashMap::new(),
+            compiled: HashMap::new(),
+            pools: HashMap::new(),
+            kv: Arc::new(PluginKV::new()),
         }
     }
 
@@ -27,7 +39,7 @@ impl PluginHost {
         wasm_path: &Path,
         manifest: &PluginManifest,
     ) -> Result<(), Error> {
-        if self.plugins.contains_key(name) {
+        if self.compiled.contains_key(name) {
             return Err(Error::Plugin(format!("plugin '{}' already loaded", name)));
         }
 
@@ -41,16 +53,17 @@ impl PluginHost {
         }])
         .with_allowed_hosts(manifest.capabilities.allowed_hosts.iter().cloned());
 
-        // Create host functions
-        let host_functions = host_functions();
+        // Create host functions (rand + KV)
+        let host_funcs = crate::host::HostFunctionsBuilder::new()
+            .with_kv(self.kv.clone())
+            .build();
 
-        // Load plugin with capabilities from manifest
         tracing::debug!(
             "registering {} host functions for plugin '{}'",
-            host_functions.len(),
+            host_funcs.len(),
             name
         );
-        for f in &host_functions {
+        for f in &host_funcs {
             tracing::debug!(
                 "  - function: name={}, namespace={:?}",
                 f.name(),
@@ -58,13 +71,30 @@ impl PluginHost {
             );
         }
 
-        let plugin = PluginBuilder::new(extism_manifest)
+        // Build plugin builder
+        let builder = PluginBuilder::new(extism_manifest)
             .with_wasi(false)
-            .with_functions(host_functions)
-            .build()
-            .map_err(|e| Error::Plugin(format!("failed to load plugin '{}': {}", name, e)))?;
+            .with_functions(host_funcs);
 
-        self.plugins.insert(name.to_string(), plugin);
+        // Compile to get a CompiledPlugin (contains JIT engine)
+        let compiled = builder
+            .clone()
+            .compile()
+            .map_err(|e| Error::Plugin(format!("failed to compile plugin '{}': {}", name, e)))?;
+
+        // Create pool for this plugin
+        // Note: CompiledPlugin is Clone (contains shared JIT engine), so we clone for the factory
+        let compiled_for_pool = compiled.clone();
+        let pool = PoolBuilder::new()
+            .with_max_instances(std::thread::available_parallelism().unwrap().into())
+            .build(move || {
+                Plugin::new_from_compiled(&compiled_for_pool)
+                    .map_err(|e| anyhow::anyhow!("failed to create plugin instance: {}", e))
+            });
+
+        self.compiled.insert(name.to_string(), compiled);
+        self.pools.insert(name.to_string(), pool);
+
         tracing::info!(
             "loaded plugin '{}' from {} (hosts: {:?})",
             name,
@@ -74,11 +104,15 @@ impl PluginHost {
         Ok(())
     }
 
-    pub fn call(&mut self, name: &str, function: &str, input: &str) -> Result<String, Error> {
-        let plugin = self
-            .plugins
-            .get_mut(name)
+    /// Call a plugin function
+    pub fn call(&self, name: &str, function: &str, input: &str) -> Result<String, Error> {
+        let pool = self.pools.get(name)
             .ok_or_else(|| Error::Plugin(format!("plugin '{}' not found", name)))?;
+
+        let timeout = Duration::from_secs(120);
+        let mut plugin = pool.get(timeout)
+            .map_err(|e| Error::Plugin(format!("pool get timeout: {}", e)))?
+            .ok_or_else(|| Error::Plugin("pool get timeout".into()))?;
 
         let output = plugin
             .call(function, input)
@@ -88,16 +122,21 @@ impl PluginHost {
     }
 
     pub fn has_plugin(&self, name: &str) -> bool {
-        self.plugins.contains_key(name)
+        self.pools.contains_key(name)
     }
 
     pub fn plugin_count(&self) -> usize {
-        self.plugins.len()
+        self.pools.len()
     }
 
     /// Load a discovered plugin
     pub fn load_discovered(&mut self, plugin: DiscoveredPlugin) -> Result<(), Error> {
         self.load_plugin(&plugin.name, &plugin.wasm_path, &plugin.manifest)
+    }
+
+    /// Get a reference to the KV store
+    pub fn kv(&self) -> Arc<PluginKV> {
+        self.kv.clone()
     }
 }
 

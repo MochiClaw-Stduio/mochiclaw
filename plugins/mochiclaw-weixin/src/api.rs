@@ -9,7 +9,7 @@ use extism_pdk::*;
 use std::collections::HashMap;
 
 use crate::constants::*;
-use crate::session::{cache_context_token, cache_typing_ticket, get_route_tag, is_poll_in_progress, pop_context_token, set_poll_in_progress, set_route_tag};
+use crate::session::{cache_context_token, cache_typing_ticket, get_route_tag, pop_context_token, set_route_tag};
 use crate::types::*;
 use crate::messages::{build_media_message, build_media_upload, build_send_message, parse_get_config_response, parse_messages, parse_qr_status, parse_send_response};
 
@@ -284,21 +284,9 @@ pub fn check_login(params_json: String) -> FnResult<String> {
 /// Poll for new messages
 #[plugin_fn]
 pub fn poll(params_json: String) -> FnResult<String> {
-    // Prevent concurrent poll calls (agent.rs calls poll every 2s but long-poll takes ~35s)
-    if is_poll_in_progress() {
-        let resp = PollResponse {
-            messages: vec![],
-            get_updates_buf: String::new(),
-            error: Some("poll already in progress, skipping".to_string()),
-        };
-        return Ok(serde_json::to_string(&resp).unwrap_or_default());
-    }
-    set_poll_in_progress(true);
-
     let params: PollParams = match serde_json::from_str(&params_json) {
         Ok(p) => p,
         Err(e) => {
-            set_poll_in_progress(false);
             let resp = PollResponse {
                 messages: vec![],
                 get_updates_buf: String::new(),
@@ -320,7 +308,6 @@ pub fn poll(params_json: String) -> FnResult<String> {
         match api_post_with_route_tag("ilink/bot/getupdates", &params.token, body, &route_tag) {
             Ok(s) => s,
             Err(e) => {
-                set_poll_in_progress(false);
                 let resp = PollResponse {
                     messages: vec![],
                     get_updates_buf: String::new(),
@@ -341,7 +328,6 @@ pub fn poll(params_json: String) -> FnResult<String> {
         }
     }
 
-    set_poll_in_progress(false);
     let resp = PollResponse {
         messages: result.messages,
         get_updates_buf: result.get_updates_buf,

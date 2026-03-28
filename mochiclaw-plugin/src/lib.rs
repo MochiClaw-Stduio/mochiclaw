@@ -10,5 +10,6 @@ pub mod plugin;
 
 pub use discover::discover;
 pub use error::Error;
+pub use host::kv::PluginKV;
 pub use manifest::{Capabilities, Features, PluginManifest};
 pub use plugin::PluginHost;
