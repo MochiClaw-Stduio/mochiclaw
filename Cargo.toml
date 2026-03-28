@@ -7,6 +7,8 @@ members = [
     "mochiclaw-cli",
     "plugins/mochiclaw-weixin",
     "plugins/mochiclaw-openai",
+    "plugin-tests/test-kv",
+    "plugin-tests/test-random",
 ]
 
 [workspace.package]

@@ -6,8 +6,12 @@ build-native:
 build-plugin:
     cargo build --release --target wasm32-unknown-unknown -p mochiclaw-openai -p mochiclaw-weixin
 
-# Test native crates
-test-native:
+# Build test plugins (for integration tests)
+build-test-plugin:
+    cargo build --release --target wasm32-unknown-unknown -p test-kv -p test-random
+
+# Test native crates (depends on test plugin WASM being built)
+test-native: build-test-plugin
     cargo test -p mochiclaw-sdk -p mochiclaw-plugin -p mochiclaw-core
 
 # Test everything

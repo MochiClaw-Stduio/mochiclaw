@@ -715,3 +715,88 @@ mod tests {
         assert_sync::<PluginKVContext>();
     }
 }
+
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
+    use extism::{Plugin, Manifest, Wasm};
+    use std::sync::Arc;
+
+    // WASM file for test-kv plugin
+    const TEST_KV_WASM: &[u8] = include_bytes!(
+        "../../../target/wasm32-unknown-unknown/release/test_kv.wasm"
+    );
+
+    fn create_test_kv() -> PluginKV {
+        PluginKV::new()
+    }
+
+    fn run_plugin_with_kv<F>(kv: Arc<PluginKV>, plugin_name: &str, allowed_kv_read: Vec<String>, f: F)
+    where
+        F: FnOnce(&mut Plugin),
+    {
+        let functions = kv_functions(kv, plugin_name, allowed_kv_read);
+
+        let manifest = Manifest::new([Wasm::data(TEST_KV_WASM)]);
+        let mut plugin = Plugin::new(manifest, functions, true).unwrap();
+        f(&mut plugin);
+    }
+
+    #[test]
+    fn test_integration_kv_set_and_get() {
+        let kv = Arc::new(create_test_kv());
+
+        run_plugin_with_kv(kv, "test-plugin", vec![], |plugin: &mut Plugin| {
+            // First call test_kv_set - this exercises host_kv_set
+            let _set_result: String = plugin.call("test_kv_set", "").unwrap();
+            // Then call test_kv_get - this exercises host_kv_get
+            let get_result: String = plugin.call("test_kv_get", "").unwrap();
+            // Result is JSON like {"success":true,"message":"test_value_from_plugin"}
+            assert!(get_result.contains("success"));
+            assert!(get_result.contains("test_value_from_plugin"));
+        });
+    }
+
+    #[test]
+    fn test_integration_kv_remove() {
+        let kv = Arc::new(create_test_kv());
+
+        run_plugin_with_kv(kv, "test-plugin", vec![], |plugin: &mut Plugin| {
+            // Set a value first
+            let _set_result: String = plugin.call("test_kv_set", "").unwrap();
+            // Verify it was set
+            let get_result: String = plugin.call("test_kv_get", "").unwrap();
+            assert!(get_result.contains("success"));
+            // Remove it
+            let remove_result: String = plugin.call("test_kv_remove", "").unwrap();
+            assert!(remove_result.contains("success"));
+        });
+    }
+
+    #[test]
+    fn test_integration_kv_list_readable() {
+        let kv = Arc::new(create_test_kv());
+
+        run_plugin_with_kv(kv, "my-plugin", vec!["other-plugin".to_string()], |plugin: &mut Plugin| {
+            // Call test_kv_list_readable
+            let result: String = plugin.call("test_kv_list_readable", "").unwrap();
+            let plugins: Vec<String> = serde_json::from_str(&result).unwrap();
+            // Should include self and allowed plugins
+            assert!(plugins.contains(&"my-plugin".to_string()));
+            assert!(plugins.contains(&"other-plugin".to_string()));
+        });
+    }
+
+    #[test]
+    fn test_integration_kv_list_writable() {
+        let kv = Arc::new(create_test_kv());
+
+        run_plugin_with_kv(kv, "my-plugin", vec!["other-plugin".to_string()], |plugin: &mut Plugin| {
+            // Call test_kv_list_writable
+            let result: String = plugin.call("test_kv_list_writable", "").unwrap();
+            let plugins: Vec<String> = serde_json::from_str(&result).unwrap();
+            // Should only include self (writes to other plugins not allowed)
+            assert_eq!(plugins, vec!["my-plugin"]);
+        });
+    }
+}
