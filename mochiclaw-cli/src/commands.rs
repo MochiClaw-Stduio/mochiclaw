@@ -53,13 +53,10 @@ pub async fn start(config: Config, config_path: PathBuf) -> Result<()> {
 
         let mut host = plugin_host.lock().await;
         for plugin in discovered {
-            // Get per-plugin proxy_url if configured
-            let proxy_url = config
-                .plugins
-                .get(&plugin.name)
-                .and_then(|p| p.proxy_url.clone());
+            // Get per-plugin config if configured
+            let plugin_config = config.plugins.get(&plugin.name).cloned().unwrap_or_default();
 
-            match host.load_discovered_with_proxy(plugin, proxy_url) {
+            match host.load_plugin(&plugin.name, &plugin.wasm_path, &plugin.manifest, &plugin_config) {
                 Ok(()) => {}
                 Err(e) => {
                     tracing::warn!("failed to load plugin: {}", e);
@@ -136,7 +133,7 @@ pub async fn login(plugin_name: &str, mut config: Config, config_path: PathBuf) 
 
     // Load plugin
     let mut plugin_host = PluginHost::new();
-    plugin_host.load_plugin(plugin_name, &wasm_path, &manifest, None)?;
+    plugin_host.load_plugin(plugin_name, &wasm_path, &manifest, &Default::default())?;
     tracing::info!("loaded plugin '{}'", plugin_name);
 
     // Call login function with empty config

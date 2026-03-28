@@ -6,7 +6,7 @@ mod agent;
 mod channel;
 mod error;
 mod model;
-mod plugin;
+pub mod plugin;
 mod runtime;
 
 use std::collections::HashMap;
@@ -16,7 +16,7 @@ pub use agent::AgentConfig;
 pub use channel::ChannelConfig;
 pub use error::ConfigError;
 pub use model::ModelConfig;
-pub use plugin::PluginConfig;
+pub use plugin::{CapabilitiesOverride, PluginConfig};
 pub use runtime::{LogConfig, NetworkConfig, RuntimeConfig};
 
 /// Current configuration version

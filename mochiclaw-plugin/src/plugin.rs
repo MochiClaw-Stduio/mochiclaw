@@ -11,6 +11,7 @@ use crate::host::kv::PluginKV;
 use crate::manifest::PluginManifest;
 use extism::{CompiledPlugin, Manifest, Plugin, PluginBuilder, Pool, PoolBuilder, Wasm};
 use extism_convert::{FromBytesOwned, ToBytes};
+use mochiclaw_config::PluginConfig;
 use mochiclaw_sdk::tool::{ToolExecutionRequest, ToolExecutionResponse};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -66,20 +67,27 @@ impl PluginHost {
         self.workspace = Some(workspace);
     }
 
-    /// Load a plugin with its manifest
+    /// Load a plugin with its manifest and per-plugin config
     ///
-    /// `proxy_url` is the per-plugin proxy URL (takes precedence over fallback_proxy_url).
-    /// If None, uses the fallback_proxy_url set via with_http_proxy().
+    /// User config capabilities override manifest capabilities:
+    /// - Boolean/string scalars: user override takes precedence (if set)
+    /// - Lists: user items are appended to manifest's list
     pub fn load_plugin(
         &mut self,
         name: &str,
         wasm_path: &Path,
         manifest: &PluginManifest,
-        proxy_url: Option<String>,
+        config: &PluginConfig,
     ) -> Result<(), Error> {
         if self.compiled.contains_key(name) {
             return Err(Error::Plugin(format!("plugin '{}' already loaded", name)));
         }
+
+        // Merge manifest capabilities with user overrides
+        let capabilities = match &config.capabilities {
+            Some(overrides) => manifest.capabilities.merge_with(overrides),
+            None => manifest.capabilities.clone(),
+        };
 
         let wasm_bytes = std::fs::read(wasm_path)
             .map_err(|e| Error::Plugin(format!("failed to read {}: {}", wasm_path.display(), e)))?;
@@ -89,14 +97,7 @@ impl PluginHost {
             data: wasm_bytes,
             meta: Default::default(),
         }])
-        .with_allowed_hosts(
-            manifest
-                .capabilities
-                .network
-                .allowed_hosts
-                .iter()
-                .cloned(),
-        );
+        .with_allowed_hosts(capabilities.network.allowed_hosts.iter().cloned());
 
         // Inject workspace config if set (for fs plugins)
         if let Some(ref workspace) = self.workspace {
@@ -104,7 +105,7 @@ impl PluginHost {
         }
 
         // Determine effective proxy: per-plugin proxy_url > fallback_proxy_url
-        let effective_proxy = proxy_url.or_else(|| self.fallback_proxy_url.clone());
+        let effective_proxy = config.proxy_url.clone().or_else(|| self.fallback_proxy_url.clone());
         tracing::debug!(
             "loading plugin '{}', effective_proxy={:?}",
             name,
@@ -116,14 +117,15 @@ impl PluginHost {
             .with_kv(
                 self.kv.clone(),
                 name,
-                manifest.capabilities.allowed_kv_read.clone(),
+                capabilities.allowed_kv_read.clone(),
             );
 
         // Add HTTP functions if network is enabled
-        if manifest.capabilities.network.enabled {
+        if capabilities.network.enabled {
             let http_context = HttpContext::new(
                 effective_proxy,
-                manifest.capabilities.network.allowed_hosts.clone(),
+                capabilities.network.allowed_hosts.clone(),
+                capabilities.network.denied_hosts.clone(),
                 self.use_system_proxy,
             )
             .map_err(|e| Error::Plugin(format!("failed to create HTTP context: {}", e)))?;
@@ -131,29 +133,25 @@ impl PluginHost {
         }
 
         // Add FS functions if fs is enabled
-        if manifest.capabilities.fs.enabled {
+        if capabilities.fs.enabled {
             let workspace = self
                 .workspace
                 .clone()
                 .unwrap_or_else(|| ".".to_string());
 
             // Resolve ${workspace} placeholder in allowed_root
-            let allowed_root = if manifest.capabilities.fs.allowed_root.is_empty() {
+            let allowed_root = if capabilities.fs.allowed_root.is_empty() {
                 workspace.clone()
             } else {
-                manifest
-                    .capabilities
-                    .fs
-                    .allowed_root
-                    .replace("${workspace}", &workspace)
+                capabilities.fs.allowed_root.replace("${workspace}", &workspace)
             };
 
             let fs_context = FsContext::new(
                 allowed_root.into(),
-                manifest.capabilities.fs.read_whitelist.iter().map(PathBuf::from).collect(),
-                manifest.capabilities.fs.write_whitelist.iter().map(PathBuf::from).collect(),
-                manifest.capabilities.fs.read_blacklist.iter().map(PathBuf::from).collect(),
-                manifest.capabilities.fs.write_blacklist.iter().map(PathBuf::from).collect(),
+                capabilities.fs.read_whitelist.iter().map(PathBuf::from).collect(),
+                capabilities.fs.write_whitelist.iter().map(PathBuf::from).collect(),
+                capabilities.fs.read_blacklist.iter().map(PathBuf::from).collect(),
+                capabilities.fs.write_blacklist.iter().map(PathBuf::from).collect(),
             );
             builder = builder.with_fs(fs_context);
         }
@@ -204,8 +202,8 @@ impl PluginHost {
             "loaded plugin '{}' from {} (network: {:?}, fs: {:?})",
             name,
             wasm_path.display(),
-            manifest.capabilities.network.enabled,
-            manifest.capabilities.fs.enabled
+            capabilities.network.enabled,
+            capabilities.fs.enabled
         );
         Ok(())
     }
@@ -285,18 +283,14 @@ impl PluginHost {
             .collect()
     }
 
-    /// Load a discovered plugin (without per-plugin proxy)
+    /// Load a discovered plugin with default config
     pub fn load_discovered(&mut self, plugin: DiscoveredPlugin) -> Result<(), Error> {
-        self.load_plugin(&plugin.name, &plugin.wasm_path, &plugin.manifest, None)
-    }
-
-    /// Load a discovered plugin with per-plugin proxy URL
-    pub fn load_discovered_with_proxy(
-        &mut self,
-        plugin: DiscoveredPlugin,
-        proxy_url: Option<String>,
-    ) -> Result<(), Error> {
-        self.load_plugin(&plugin.name, &plugin.wasm_path, &plugin.manifest, proxy_url)
+        self.load_plugin(
+            &plugin.name,
+            &plugin.wasm_path,
+            &plugin.manifest,
+            &PluginConfig::default(),
+        )
     }
 
     /// Get a reference to the KV store

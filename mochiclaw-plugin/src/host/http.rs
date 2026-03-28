@@ -26,6 +26,7 @@ pub struct HttpContext {
     pub proxy_url: Option<String>,
     pub client: Client,
     pub allowed_hosts: Vec<String>,
+    pub denied_hosts: Vec<String>,
     pub last_status: u16,
     pub last_headers: HashMap<String, String>,
 }
@@ -36,6 +37,7 @@ impl Clone for HttpContext {
             proxy_url: self.proxy_url.clone(),
             client: self.client.clone(),
             allowed_hosts: self.allowed_hosts.clone(),
+            denied_hosts: self.denied_hosts.clone(),
             last_status: self.last_status,
             last_headers: self.last_headers.clone(),
         }
@@ -43,7 +45,7 @@ impl Clone for HttpContext {
 }
 
 impl HttpContext {
-    /// Create a new HTTP context with optional proxy URL and allowed hosts
+    /// Create a new HTTP context with optional proxy URL and allowed/denied hosts
     ///
     /// - If `proxy_url` is Some, use it directly
     /// - If `proxy_url` is None and `use_system_proxy` is true, reqwest uses system HTTP_PROXY
@@ -51,6 +53,7 @@ impl HttpContext {
     pub fn new(
         proxy_url: Option<String>,
         allowed_hosts: Vec<String>,
+        denied_hosts: Vec<String>,
         use_system_proxy: bool,
     ) -> anyhow::Result<Self> {
         let client = if let Some(ref proxy) = proxy_url {
@@ -68,12 +71,14 @@ impl HttpContext {
             proxy_url,
             client,
             allowed_hosts,
+            denied_hosts,
             last_status: 0,
             last_headers: HashMap::new(),
         })
     }
 
     /// Check if a host is allowed to be accessed
+    /// Blacklist takes precedence over whitelist
     fn is_host_allowed(&self, url_str: &str) -> bool {
         if self.allowed_hosts.is_empty() {
             return false;
@@ -85,6 +90,22 @@ impl HttpContext {
 
         let host_str = url.host_str().unwrap_or_default();
 
+        // First check blacklist (denied_hosts takes precedence)
+        if self.denied_hosts.iter().any(|pattern| {
+            if let Ok(pat) = glob::Pattern::new(pattern) {
+                pat.matches(host_str)
+            } else {
+                pattern == host_str
+            }
+        }) {
+            tracing::warn!(
+                "HTTP request to {} is denied by denied_hosts pattern",
+                url_str
+            );
+            return false;
+        }
+
+        // Then check whitelist
         self.allowed_hosts.iter().any(|pattern| {
             if let Ok(pat) = glob::Pattern::new(pattern) {
                 pat.matches(host_str)
