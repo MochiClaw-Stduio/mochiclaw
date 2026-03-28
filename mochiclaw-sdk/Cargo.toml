@@ -5,10 +5,10 @@ edition.workspace = true
 description = "Mochiclaw SDK - Shared types for host and plugins"
 
 [dependencies]
-async-trait = "0.1"
-serde = { workspace = true, features = ["derive"] }
+async-trait.workspace = true
+serde.workspace = true
 serde_json.workspace = true
-rmp-serde = "1"
-extism-pdk = "1"
-extism-convert = { version = "1", features = ["msgpack"] }
+rmp-serde.workspace = true
+extism-pdk.workspace = true
+extism-convert.workspace = true
 thiserror.workspace = true

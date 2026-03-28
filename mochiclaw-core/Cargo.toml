@@ -7,7 +7,7 @@ description = "Mochiclaw Core - Agent loop, message bus"
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-rmp-serde = "1"
+rmp-serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
@@ -15,11 +15,11 @@ anyhow.workspace = true
 toml.workspace = true
 rand.workspace = true
 time.workspace = true
-base64 = "0.22"
+base64.workspace = true
 file_type = "0.8"
 mochiclaw-sdk = { path = "../mochiclaw-sdk" }
 mochiclaw-plugin = { path = "../mochiclaw-plugin" }
 mochiclaw-config = { path = "../mochiclaw-config" }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile.workspace = true

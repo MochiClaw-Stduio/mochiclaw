@@ -7,7 +7,7 @@ description = "Mochiclaw Plugin - Plugin host, manifest, and registry"
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-rmp-serde = "1"
+rmp-serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
@@ -18,10 +18,10 @@ reqwest = { workspace = true, features = ["json", "blocking"] }
 url.workspace = true
 glob.workspace = true
 extism = { version = "1", default-features = false, features = ["register-filesystem", "wasmtime-default-features"] }
-extism-convert = { version = "1", features = ["msgpack"] }
+extism-convert.workspace = true
 mochiclaw-sdk = { path = "../mochiclaw-sdk" }
 mochiclaw-config = { path = "../mochiclaw-config" }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
-tempfile = "3"
+tempfile.workspace = true

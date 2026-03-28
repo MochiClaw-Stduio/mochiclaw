@@ -8,7 +8,7 @@ description = "Filesystem tool plugin for Mochiclaw"
 crate-type = ["cdylib"]
 
 [dependencies]
-extism-pdk = "1"
+extism-pdk.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 mochiclaw-sdk = { path = "../../mochiclaw-sdk" }
