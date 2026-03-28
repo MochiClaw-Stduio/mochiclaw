@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-/// HTTP request structure (same as extism_manifest::HttpRequest)
+/// HTTP request structure
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HttpRequest {
     pub url: String,
@@ -19,21 +19,27 @@ pub struct HttpRequest {
     pub method: Option<String>,
 }
 
-/// HTTP context for storing proxy config and last response state
-///
-/// Wrapped in Arc<Mutex<>> to share state across all HTTP host functions
-/// (http_request, http_status_code, http_headers)
-#[derive(Clone)]
+/// Shared HTTP state - wrapped in Arc<Mutex<>> and shared across all HTTP host functions
+/// This is the same pattern as extism's CurrentPlugin having http_status/http_headers fields,
+/// but we use explicit Arc<Mutex<>> since we can't modify CurrentPlugin.
 pub struct HttpContext {
-    inner: Arc<Mutex<HttpContextInner>>,
-}
-
-pub struct HttpContextInner {
     pub proxy_url: Option<String>,
     pub client: Client,
     pub allowed_hosts: Vec<String>,
     pub last_status: u16,
     pub last_headers: HashMap<String, String>,
+}
+
+impl Clone for HttpContext {
+    fn clone(&self) -> Self {
+        Self {
+            proxy_url: self.proxy_url.clone(),
+            client: self.client.clone(),
+            allowed_hosts: self.allowed_hosts.clone(),
+            last_status: self.last_status,
+            last_headers: self.last_headers.clone(),
+        }
+    }
 }
 
 impl HttpContext {
@@ -47,13 +53,11 @@ impl HttpContext {
         };
 
         Ok(Self {
-            inner: Arc::new(Mutex::new(HttpContextInner {
-                proxy_url,
-                client,
-                allowed_hosts,
-                last_status: 0,
-                last_headers: HashMap::new(),
-            })),
+            proxy_url,
+            client,
+            allowed_hosts,
+            last_status: 0,
+            last_headers: HashMap::new(),
         })
     }
 
@@ -64,19 +68,17 @@ impl HttpContext {
 
     /// Check if a host is allowed to be accessed
     fn is_host_allowed(&self, url_str: &str) -> bool {
-        let inner = self.inner.lock().unwrap();
-        if inner.allowed_hosts.is_empty() {
+        if self.allowed_hosts.is_empty() {
             return false;
         }
 
-        let url = match url::Url::parse(url_str) {
-            Ok(u) => u,
-            Err(_) => return false,
+        let Ok(url) = url::Url::parse(url_str) else {
+            return false;
         };
 
         let host_str = url.host_str().unwrap_or_default();
 
-        inner.allowed_hosts.iter().any(|pattern| {
+        self.allowed_hosts.iter().any(|pattern| {
             if let Ok(pat) = glob::Pattern::new(pattern) {
                 pat.matches(host_str)
             } else {
@@ -88,10 +90,14 @@ impl HttpContext {
 
 /// Create all HTTP host functions with the given context
 pub fn http_functions(ctx: HttpContext) -> Vec<Function> {
+    // Wrap in Arc<Mutex<>> ONCE so all three functions share the same state
+    // (like extism's CurrentPlugin has http_status/http_headers fields)
+    let shared: Arc<Mutex<HttpContext>> = Arc::new(Mutex::new(ctx));
+
     vec![
-        http_request_fn(ctx.clone()).with_namespace("extism:host/env"),
-        http_status_code_fn(ctx.clone()).with_namespace("extism:host/env"),
-        http_headers_fn(ctx).with_namespace("extism:host/env"),
+        http_request_fn(shared.clone()).with_namespace("extism:host/env"),
+        http_status_code_fn(shared.clone()).with_namespace("extism:host/env"),
+        http_headers_fn(shared).with_namespace("extism:host/env"),
     ]
 }
 
@@ -100,27 +106,16 @@ pub fn http_functions(ctx: HttpContext) -> Vec<Function> {
 /// Input: JSON encoded HttpRequest (i64 offset)
 /// Body: bytes (i64 offset or 0)
 /// Returns: i64 (offset to response body)
-fn http_request_fn(ctx: HttpContext) -> Function {
+fn http_request_fn(ctx: Arc<Mutex<HttpContext>>) -> Function {
+    // We pass the Arc directly to the closure, NOT through UserData
+    // UserData would wrap it in another Arc, breaking shared state
     Function::new(
         "http_request",
         [ValType::I64, ValType::I64],
         [ValType::I64],
-        UserData::new(ctx),
-        |plugin: &mut CurrentPlugin,
-         inputs: &[Val],
-         outputs: &mut [Val],
-         user_data: UserData<HttpContext>| {
-            // Get context from user_data
-            let ctx_arc = match user_data.get() {
-                Ok(ctx) => ctx,
-                Err(e) => {
-                    tracing::error!("http_request failed to get context: {}", e);
-                    outputs[0] = Val::I64(0);
-                    return Ok(());
-                }
-            };
-
-            let mut ctx = match ctx_arc.lock() {
+        UserData::new(()),
+        move |plugin: &mut CurrentPlugin, inputs: &[Val], outputs: &mut [Val], _user_data: UserData<()>| {
+            let mut ctx = match ctx.lock() {
                 Ok(guard) => guard,
                 Err(_) => {
                     outputs[0] = Val::I64(0);
@@ -170,10 +165,10 @@ fn http_request_fn(ctx: HttpContext) -> Function {
                 tracing::warn!(
                     "HTTP request to {} is not allowed (allowed_hosts: {:?})",
                     req.url,
-                    ctx.inner.lock().unwrap().allowed_hosts
+                    ctx.allowed_hosts
                 );
-                ctx.inner.lock().unwrap().last_status = 0;
-                ctx.inner.lock().unwrap().last_headers.clear();
+                ctx.last_status = 0;
+                ctx.last_headers.clear();
                 outputs[0] = Val::I64(0);
                 return Ok(());
             }
@@ -181,9 +176,6 @@ fn http_request_fn(ctx: HttpContext) -> Function {
             // Build and execute request
             let method = req.method.as_deref().unwrap_or("GET");
             let mut request = ctx
-                .inner
-                .lock()
-                .unwrap()
                 .client
                 .request(method.parse().unwrap_or(reqwest::Method::GET), &req.url);
 
@@ -191,28 +183,25 @@ fn http_request_fn(ctx: HttpContext) -> Function {
                 request = request.header(k, v);
             }
 
-            let body = if let Some(body) = body {
+            if let Some(body) = body {
                 request = request.body(body);
-                None
-            } else {
-                body
-            };
+            }
 
             // Execute request (blocking)
             let response = match request.send() {
                 Ok(resp) => resp,
                 Err(e) => {
                     tracing::error!("HTTP request failed: {}", e);
-                    // Set error status
-                    ctx.inner.lock().unwrap().last_status = 0;
-                    ctx.inner.lock().unwrap().last_headers.clear();
+                    ctx.last_status = 0;
+                    ctx.last_headers.clear();
                     outputs[0] = Val::I64(0);
                     return Ok(());
                 }
             };
 
             // Store status and headers
-            let status = response.status().as_u16();
+            ctx.last_status = response.status().as_u16();
+
             let headers: HashMap<String, String> = response
                 .headers()
                 .iter()
@@ -223,11 +212,7 @@ fn http_request_fn(ctx: HttpContext) -> Function {
                 )
                 .collect();
 
-            {
-                let mut inner = ctx.inner.lock().unwrap();
-                inner.last_status = status;
-                inner.last_headers = headers;
-            }
+            ctx.last_headers = headers;
 
             // Read response body
             let body = match response.bytes() {
@@ -252,25 +237,14 @@ fn http_request_fn(ctx: HttpContext) -> Function {
 /// host_http_status_code: get the status code of the last HTTP request
 ///
 /// Returns: i32 (status code)
-fn http_status_code_fn(ctx: HttpContext) -> Function {
+fn http_status_code_fn(ctx: Arc<Mutex<HttpContext>>) -> Function {
     Function::new(
         "http_status_code",
         [],
         [ValType::I32],
-        UserData::new(ctx),
-        |_plugin: &mut CurrentPlugin,
-         _inputs: &[Val],
-         outputs: &mut [Val],
-         user_data: UserData<HttpContext>| {
-            let ctx_arc = match user_data.get() {
-                Ok(ctx) => ctx,
-                Err(_) => {
-                    outputs[0] = Val::I32(0);
-                    return Ok(());
-                }
-            };
-
-            let ctx = match ctx_arc.lock() {
+        UserData::new(()),
+        move |_: &mut CurrentPlugin, _: &[Val], outputs: &mut [Val], _user_data: UserData<()>| {
+            let ctx = match ctx.lock() {
                 Ok(guard) => guard,
                 Err(_) => {
                     outputs[0] = Val::I32(0);
@@ -278,7 +252,7 @@ fn http_status_code_fn(ctx: HttpContext) -> Function {
                 }
             };
 
-            outputs[0] = Val::I32(ctx.inner.lock().unwrap().last_status as i32);
+            outputs[0] = Val::I32(ctx.last_status as i32);
             Ok(())
         },
     )
@@ -287,25 +261,14 @@ fn http_status_code_fn(ctx: HttpContext) -> Function {
 /// host_http_headers: get the headers of the last HTTP request
 ///
 /// Returns: i64 (offset to JSON encoded headers)
-fn http_headers_fn(ctx: HttpContext) -> Function {
+fn http_headers_fn(ctx: Arc<Mutex<HttpContext>>) -> Function {
     Function::new(
         "http_headers",
         [],
         [ValType::I64],
-        UserData::new(ctx),
-        |plugin: &mut CurrentPlugin,
-         _inputs: &[Val],
-         outputs: &mut [Val],
-         user_data: UserData<HttpContext>| {
-            let ctx_arc = match user_data.get() {
-                Ok(ctx) => ctx,
-                Err(_) => {
-                    outputs[0] = Val::I64(0);
-                    return Ok(());
-                }
-            };
-
-            let ctx = match ctx_arc.lock() {
+        UserData::new(()),
+        move |plugin: &mut CurrentPlugin, _: &[Val], outputs: &mut [Val], _user_data: UserData<()>| {
+            let ctx = match ctx.lock() {
                 Ok(guard) => guard,
                 Err(_) => {
                     outputs[0] = Val::I64(0);
@@ -313,14 +276,11 @@ fn http_headers_fn(ctx: HttpContext) -> Function {
                 }
             };
 
-            let json = {
-                let inner = ctx.inner.lock().unwrap();
-                match serde_json::to_string(&inner.last_headers) {
-                    Ok(s) => s,
-                    Err(_) => {
-                        outputs[0] = Val::I64(0);
-                        return Ok(());
-                    }
+            let json = match serde_json::to_string(&ctx.last_headers) {
+                Ok(s) => s,
+                Err(_) => {
+                    outputs[0] = Val::I64(0);
+                    return Ok(());
                 }
             };
 
