@@ -17,9 +17,15 @@ pub use error::ConfigError;
 pub use model::ModelConfig;
 pub use plugin::PluginConfig;
 
+/// Current configuration version
+pub const CONFIG_VERSION: u32 = 1;
+
 /// Root configuration structure
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Config {
+    /// Configuration version for migration support
+    #[serde(default, rename = "version")]
+    pub version: Option<u32>,
     pub agent: AgentConfig,
     /// Per-plugin configuration (key = plugin name)
     #[serde(default)]
@@ -42,7 +48,27 @@ impl Config {
 
     /// Parse configuration from TOML string
     pub fn from_toml(toml: &str) -> Result<Self, ConfigError> {
-        toml::from_str(toml).map_err(|e| ConfigError::Parse(format!("failed to parse config: {}", e)))
+        let mut config: Config =
+            toml::from_str(toml).map_err(|e| ConfigError::Parse(format!("failed to parse config: {}", e)))?;
+        config.migrate()?;
+        Ok(config)
+    }
+
+    /// Migrate configuration to current version
+    fn migrate(&mut self) -> Result<(), ConfigError> {
+        let version = self.version.unwrap_or(0);
+        if version > CONFIG_VERSION {
+            return Err(ConfigError::Parse(format!(
+                "unsupported config version: {} (maximum supported: {})",
+                version, CONFIG_VERSION
+            )));
+        }
+        // Migrate from version 0 (unversioned) to version 1
+        if version < 1 {
+            // Version 1 adds the version field - no data migration needed
+            self.version = Some(1);
+        }
+        Ok(())
     }
 
     /// Get workspace path resolved relative to config file location
@@ -69,6 +95,7 @@ impl Config {
     /// Create a default configuration for onboarding
     pub fn default_for_onboarding() -> Self {
         Self {
+            version: Some(CONFIG_VERSION),
             agent: AgentConfig {
                 model: "gpt-4".to_string(),
                 max_iterations: 40,
