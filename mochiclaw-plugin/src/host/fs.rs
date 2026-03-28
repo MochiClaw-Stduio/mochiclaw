@@ -282,13 +282,20 @@ impl FsContext {
         }
 
         // Resolve path relative to workspace
-        let resolved_path = if path.is_absolute() {
+        let joined = if path.is_absolute() {
             path.to_path_buf()
         } else {
             resolved_workspace.join(path)
-        }
-        .canonicalize()
-        .map_err(|e| format!("Failed to resolve path: {}", e))?;
+        };
+        // Strip trailing slashes before canonicalize for cross-platform consistency
+        let path_to_canonicalize = joined
+            .to_string_lossy()
+            .strip_suffix('/')
+            .map(PathBuf::from)
+            .unwrap_or(joined);
+        let resolved_path = path_to_canonicalize
+            .canonicalize()
+            .map_err(|e| format!("Failed to resolve path: {}", e))?;
 
         // Check final path is within allowed_root
         if !resolved_path.starts_with(&self.allowed_root) {
