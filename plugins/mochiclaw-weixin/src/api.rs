@@ -4,6 +4,7 @@
 
 use base64::Engine;
 use extism_pdk::*;
+use mochiclaw_sdk::channel::{PollParams, PollResponse, QrStatusParams, QrStatusResponse, SendResponse, SetTypingParams};
 use mochiclaw_sdk::host::http::HttpClient;
 use rmp_serde::{Deserializer, Serializer};
 use serde::Serialize;
@@ -566,62 +567,6 @@ pub fn send_media(params: Vec<u8>) -> FnResult<Vec<u8>> {
         error: result.err(),
     };
     Ok(to_msgpack(&resp).unwrap_or_default())
-}
-
-/// Get config including typing_ticket for a user
-pub fn get_config(params: Vec<u8>) -> FnResult<Vec<u8>> {
-    let params: GetConfigParams = match from_msgpack(&params) {
-        Some(p) => p,
-        None => {
-            let resp = GetConfigResponse {
-                success: false,
-                typing_ticket: String::new(),
-                error: Some("invalid params: failed to deserialize msgpack".to_string()),
-            };
-            return Ok(to_msgpack(&resp).unwrap_or_default());
-        }
-    };
-
-    let route_tag = get_route_tag();
-
-    let body = serde_json::json!({
-        "ilink_user_id": params.ilink_user_id,
-        "context_token": params.context_token,
-        "base_info": { "channel_version": CHANNEL_VERSION }
-    });
-
-    let resp_text = match api_post("ilink/bot/getconfig", &params.token, body, &route_tag) {
-        Ok(s) => s,
-        Err(e) => {
-            let resp = GetConfigResponse {
-                success: false,
-                typing_ticket: String::new(),
-                error: Some(e),
-            };
-            return Ok(to_msgpack(&resp).unwrap_or_default());
-        }
-    };
-
-    match parse_get_config_response(&resp_text) {
-        Ok(typing_ticket) => {
-            // Cache the typing ticket for this user
-            cache_typing_ticket(&params.ilink_user_id, &typing_ticket);
-            let resp = GetConfigResponse {
-                success: true,
-                typing_ticket,
-                error: None,
-            };
-            Ok(to_msgpack(&resp).unwrap_or_default())
-        }
-        Err(e) => {
-            let resp = GetConfigResponse {
-                success: false,
-                typing_ticket: String::new(),
-                error: Some(e),
-            };
-            Ok(to_msgpack(&resp).unwrap_or_default())
-        }
-    }
 }
 
 /// Set typing indicator (generic interface for agent).

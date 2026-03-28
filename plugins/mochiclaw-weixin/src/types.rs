@@ -2,7 +2,7 @@
 //!
 //! Type definitions for WeChat iLink HTTP API requests and responses.
 
-use mochiclaw_sdk::InboundMessage;
+use mochiclaw_sdk::message::InboundMessage;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -22,38 +22,6 @@ pub struct LoginResponse {
 #[derive(Debug, Deserialize)]
 pub struct LoginParams {
     pub config: Vec<u8>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct QrStatusResponse {
-    pub status: String,
-    pub token: Option<String>,
-    pub base_url: Option<String>,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct QrStatusParams {
-    pub temp_token: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct PollResponse {
-    pub messages: Vec<InboundMessage>,
-    pub get_updates_buf: String,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct PollParams {
-    pub token: String,
-    pub get_updates_buf: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SendResponse {
-    pub success: bool,
-    pub error: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -90,28 +58,6 @@ pub struct SendMediaParams {
     pub aes_key: String,
     pub file_name: String,
     pub file_size: usize,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct GetConfigParams {
-    pub token: String,
-    pub ilink_user_id: String,
-    pub context_token: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct GetConfigResponse {
-    pub success: bool,
-    pub typing_ticket: String,
-    pub error: Option<String>,
-}
-
-/// Parameters for set_typing (generic boolean interface)
-#[derive(Debug, Deserialize)]
-pub struct SetTypingParams {
-    pub token: String,
-    pub chat_id: String,
-    pub typing: bool, // true=start typing, false=stop typing
 }
 
 // ============================================================================

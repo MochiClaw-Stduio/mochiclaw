@@ -9,5 +9,5 @@ async-trait = "0.1"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 rmp-serde = "1"
-extism-pdk = { version = "1", default-features = false }
+extism-pdk = "1"
 thiserror.workspace = true
