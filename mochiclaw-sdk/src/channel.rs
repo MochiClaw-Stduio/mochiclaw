@@ -4,6 +4,7 @@
 //! These types are channel-agnostic and can be reused across different channel implementations.
 
 use serde::{Deserialize, Serialize};
+use extism_convert::{FromBytes, ToBytes, Msgpack};
 
 use crate::message::InboundMessage;
 
@@ -11,7 +12,8 @@ use crate::message::InboundMessage;
 // Login / QR Code Types
 // ============================================================================
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, ToBytes)]
+#[encoding(Msgpack)]
 pub struct QrStatusResponse {
     pub status: String,
     pub token: Option<String>,
@@ -19,7 +21,8 @@ pub struct QrStatusResponse {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, FromBytes)]
+#[encoding(Msgpack)]
 pub struct QrStatusParams {
     pub temp_token: String,
 }
@@ -28,14 +31,16 @@ pub struct QrStatusParams {
 // Poll Types
 // ============================================================================
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, ToBytes)]
+#[encoding(Msgpack)]
 pub struct PollResponse {
     pub messages: Vec<InboundMessage>,
     pub get_updates_buf: String,
     pub error: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, FromBytes)]
+#[encoding(Msgpack)]
 pub struct PollParams {
     pub token: String,
     #[serde(default)]
@@ -46,7 +51,8 @@ pub struct PollParams {
 // Send Types
 // ============================================================================
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, ToBytes)]
+#[encoding(Msgpack)]
 pub struct SendResponse {
     pub success: bool,
     pub error: Option<String>,
@@ -56,7 +62,8 @@ pub struct SendResponse {
 // Typing Indicator Types
 // ============================================================================
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, FromBytes)]
+#[encoding(Msgpack)]
 pub struct SetTypingParams {
     pub token: String,
     pub chat_id: String,

@@ -3,24 +3,10 @@
 //! This plugin implements an LLM provider using the OpenAI Chat Completions API.
 //! Uses HttpClient from mochiclaw_sdk for HTTP calls.
 
-use extism_pdk::*;
+use extism_pdk::{FromBytes, ToBytes, Msgpack, *};
 use mochiclaw_sdk::host::http::HttpClient;
 use mochiclaw_sdk::provider::{ChatRequest, ChatResponse, MessageRole};
-use rmp_serde::{Deserializer, Serializer};
-use serde::Serialize;
-use std::io::Cursor;
-
-/// Deserialize a value from MessagePack bytes
-fn from_msgpack<'a, T: serde::Deserialize<'a>>(buf: &'a [u8]) -> Option<T> {
-    T::deserialize(&mut Deserializer::new(Cursor::new(buf))).ok()
-}
-
-/// Serialize a value to MessagePack bytes
-fn to_msgpack<T: Serialize>(value: &T) -> Option<Vec<u8>> {
-    let mut buf = Vec::new();
-    value.serialize(&mut Serializer::new(&mut buf)).ok()?;
-    Some(buf)
-}
+use serde::{Deserialize, Serialize};
 
 fn role_to_string(role: &MessageRole) -> &str {
     match role {
@@ -30,30 +16,16 @@ fn role_to_string(role: &MessageRole) -> &str {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, FromBytes, ToBytes)]
+#[encoding(Msgpack)]
 struct ChatChunk {
     delta: String,
     done: bool,
 }
 
-#[derive(Debug, Serialize)]
-struct ErrorResponse {
-    error: String,
-}
-
 /// Non-streaming chat completion
 #[plugin_fn]
-pub fn chat(request: Vec<u8>) -> FnResult<Vec<u8>> {
-    let request: ChatRequest = match from_msgpack(&request) {
-        Some(r) => r,
-        None => {
-            let response = ErrorResponse {
-                error: "invalid request: failed to deserialize msgpack".to_string(),
-            };
-            return Ok(to_msgpack(&response).unwrap_or_default());
-        }
-    };
-
+pub fn chat(request: ChatRequest) -> FnResult<ChatResponse> {
     // Build the OpenAI request body
     let openai_messages: Vec<serde_json::Value> = request.messages.iter().map(|m| {
         serde_json::json!({
@@ -85,27 +57,30 @@ pub fn chat(request: Vec<u8>) -> FnResult<Vec<u8>> {
         Ok(client) => match client.send() {
             Ok(resp) => resp,
             Err(e) => {
-                let response = ErrorResponse {
-                    error: format!("HTTP request failed: {}", e),
-                };
-                return Ok(to_msgpack(&response).unwrap_or_default());
+                return Ok(ChatResponse {
+                    content: String::new(),
+                    tool_calls: Vec::new(),
+                    error: Some(format!("HTTP request failed: {}", e)),
+                });
             }
         },
         Err(e) => {
-            let response = ErrorResponse {
-                error: format!("Failed to build request: {}", e),
-            };
-            return Ok(to_msgpack(&response).unwrap_or_default());
+            return Ok(ChatResponse {
+                content: String::new(),
+                tool_calls: Vec::new(),
+                error: Some(format!("Failed to build request: {}", e)),
+            });
         }
     };
 
     let status = response.status;
     if status != 200 {
         let body_str = String::from_utf8_lossy(response.bytes()).to_string();
-        let response = ErrorResponse {
-            error: format!("OpenAI API returned status {}: {}", status, body_str),
-        };
-        return Ok(to_msgpack(&response).unwrap_or_default());
+        return Ok(ChatResponse {
+            content: String::new(),
+            tool_calls: Vec::new(),
+            error: Some(format!("OpenAI API returned status {}: {}", status, body_str)),
+        });
     }
 
     // Parse the OpenAI response
@@ -114,10 +89,11 @@ pub fn chat(request: Vec<u8>) -> FnResult<Vec<u8>> {
     let openai_resp: serde_json::Value = match serde_json::from_str(&resp_str) {
         Ok(v) => v,
         Err(e) => {
-            let response = ErrorResponse {
-                error: format!("failed to parse OpenAI response: {}", e),
-            };
-            return Ok(to_msgpack(&response).unwrap_or_default());
+            return Ok(ChatResponse {
+                content: String::new(),
+                tool_calls: Vec::new(),
+                error: Some(format!("failed to parse OpenAI response: {}", e)),
+            });
         }
     };
 
@@ -127,27 +103,16 @@ pub fn chat(request: Vec<u8>) -> FnResult<Vec<u8>> {
         .unwrap_or("")
         .to_string();
 
-    let response = ChatResponse {
+    Ok(ChatResponse {
         content,
         tool_calls: Vec::new(),
         error: None,
-    };
-    Ok(to_msgpack(&response).unwrap_or_default())
+    })
 }
 
 /// Streaming chat completion
 #[plugin_fn]
-pub fn chat_stream(request: Vec<u8>) -> FnResult<Vec<u8>> {
-    let request: ChatRequest = match from_msgpack(&request) {
-        Some(r) => r,
-        None => {
-            let response = ErrorResponse {
-                error: "invalid request: failed to deserialize msgpack".to_string(),
-            };
-            return Ok(to_msgpack(&response).unwrap_or_default());
-        }
-    };
-
+pub fn chat_stream(request: ChatRequest) -> FnResult<Vec<u8>> {
     // Build the OpenAI request body with streaming
     let openai_messages: Vec<serde_json::Value> = request.messages.iter().map(|m| {
         serde_json::json!({
@@ -184,7 +149,7 @@ pub fn chat_stream(request: Vec<u8>) -> FnResult<Vec<u8>> {
                     delta: format!("HTTP request failed: {}", e),
                     done: true,
                 };
-                return Ok(to_msgpack(&vec![chunk]).unwrap_or_default());
+                return Ok(rmp_serde::to_vec(&vec![chunk]).unwrap_or_default());
             }
         },
         Err(e) => {
@@ -192,7 +157,7 @@ pub fn chat_stream(request: Vec<u8>) -> FnResult<Vec<u8>> {
                 delta: format!("Failed to build request: {}", e),
                 done: true,
             };
-            return Ok(to_msgpack(&vec![chunk]).unwrap_or_default());
+            return Ok(rmp_serde::to_vec(&vec![chunk]).unwrap_or_default());
         }
     };
 
@@ -223,7 +188,7 @@ pub fn chat_stream(request: Vec<u8>) -> FnResult<Vec<u8>> {
         last.done = true;
     }
 
-    Ok(to_msgpack(&chunks).unwrap_or_default())
+    Ok(rmp_serde::to_vec(&chunks).unwrap_or_default())
 }
 
 /// Get plugin name

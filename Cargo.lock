@@ -1634,6 +1634,7 @@ name = "mochiclaw-sdk"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "extism-convert",
  "extism-pdk",
  "rmp-serde",
  "serde",

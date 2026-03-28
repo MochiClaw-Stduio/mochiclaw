@@ -2,6 +2,7 @@
 //!
 //! Type definitions for WeChat iLink HTTP API requests and responses.
 
+use extism_pdk::{FromBytes, ToBytes, Msgpack};
 use mochiclaw_sdk::message::InboundMessage;
 use serde::{Deserialize, Serialize};
 
@@ -9,7 +10,8 @@ use serde::{Deserialize, Serialize};
 // Plugin-facing Request/Response Types
 // ============================================================================
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, ToBytes)]
+#[encoding(Msgpack)]
 pub struct LoginResponse {
     pub status: String,
     pub qr_url: Option<String>,
@@ -19,26 +21,30 @@ pub struct LoginResponse {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, FromBytes)]
+#[encoding(Msgpack)]
 pub struct LoginParams {
     pub config: Vec<u8>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, FromBytes)]
+#[encoding(Msgpack)]
 pub struct SendTextParams {
     pub token: String,
     pub to_user_id: String,
     pub content: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, ToBytes)]
+#[encoding(Msgpack)]
 pub struct UploadResponse {
     pub upload_param: String,
     pub aes_key: String,
     pub error: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, FromBytes)]
+#[encoding(Msgpack)]
 pub struct GetUploadUrlParams {
     pub token: String,
     pub to_user_id: String,
@@ -47,7 +53,8 @@ pub struct GetUploadUrlParams {
     pub media_type: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, FromBytes)]
+#[encoding(Msgpack)]
 pub struct SendMediaParams {
     pub token: String,
     pub to_user_id: String,

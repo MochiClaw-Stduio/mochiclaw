@@ -6,10 +6,7 @@ use base64::Engine;
 use extism_pdk::*;
 use mochiclaw_sdk::channel::{PollParams, PollResponse, QrStatusParams, QrStatusResponse, SendResponse, SetTypingParams};
 use mochiclaw_sdk::host::http::HttpClient;
-use rmp_serde::{Deserializer, Serializer};
-use serde::Serialize;
 use std::collections::HashMap;
-use std::io::Cursor;
 
 use crate::constants::*;
 use crate::messages::{
@@ -20,18 +17,6 @@ use crate::session::{
     cache_context_token, cache_typing_ticket, get_route_tag, pop_context_token, set_route_tag,
 };
 use crate::types::*;
-
-/// Deserialize a value from MessagePack bytes
-fn from_msgpack<'a, T: serde::Deserialize<'a>>(buf: &'a [u8]) -> Option<T> {
-    T::deserialize(&mut Deserializer::new(Cursor::new(buf))).ok()
-}
-
-/// Serialize a value to MessagePack bytes
-fn to_msgpack<T: Serialize>(value: &T) -> Option<Vec<u8>> {
-    let mut buf = Vec::new();
-    value.serialize(&mut Serializer::new(&mut buf)).ok()?;
-    Some(buf)
-}
 
 // ============================================================================
 // HTTP Helpers
@@ -142,25 +127,10 @@ fn api_post(
 /// Perform QR code login flow
 /// Returns QR code URL for display, or token if already logged in
 #[plugin_fn]
-pub fn login(params: Vec<u8>) -> FnResult<Vec<u8>> {
-    let params: LoginParams = match from_msgpack(&params) {
-        Some(p) => p,
-        None => {
-            let resp = LoginResponse {
-                status: "error".to_string(),
-                qr_url: None,
-                temp_token: None,
-                token: None,
-                base_url: None,
-                error: Some("invalid params: failed to deserialize msgpack".to_string()),
-            };
-            return Ok(to_msgpack(&resp).unwrap_or_default());
-        }
-    };
-
-    let config: WeixinConfig = match from_msgpack(&params.config) {
-        Some(c) => c,
-        None => WeixinConfig::default(),
+pub fn login(params: LoginParams) -> FnResult<LoginResponse> {
+    let config: WeixinConfig = match rmp_serde::from_slice(&params.config) {
+        Ok(c) => c,
+        Err(_) => WeixinConfig::default(),
     };
 
     // Store route_tag for use in API calls
@@ -168,15 +138,14 @@ pub fn login(params: Vec<u8>) -> FnResult<Vec<u8>> {
 
     // If we already have a token, return it
     if !config.token.is_empty() {
-        let resp = LoginResponse {
+        return Ok(LoginResponse {
             status: "logged_in".to_string(),
             qr_url: None,
             temp_token: None,
             token: Some(config.token),
             base_url: Some(config.base_url),
             error: None,
-        };
-        return Ok(to_msgpack(&resp).unwrap_or_default());
+        });
     }
 
     // Fetch QR code
@@ -192,30 +161,28 @@ pub fn login(params: Vec<u8>) -> FnResult<Vec<u8>> {
     ) {
         Ok(s) => s,
         Err(e) => {
-            let resp = LoginResponse {
+            return Ok(LoginResponse {
                 status: "error".to_string(),
                 qr_url: None,
                 temp_token: None,
                 token: None,
                 base_url: None,
                 error: Some(e),
-            };
-            return Ok(to_msgpack(&resp).unwrap_or_default());
+            });
         }
     };
 
     let qr_resp: serde_json::Value = match serde_json::from_str(&resp_text) {
         Ok(v) => v,
         Err(e) => {
-            let resp = LoginResponse {
+            return Ok(LoginResponse {
                 status: "error".to_string(),
                 qr_url: None,
                 temp_token: None,
                 token: None,
                 base_url: None,
                 error: Some(e.to_string()),
-            };
-            return Ok(to_msgpack(&resp).unwrap_or_default());
+            });
         }
     };
 
@@ -225,33 +192,19 @@ pub fn login(params: Vec<u8>) -> FnResult<Vec<u8>> {
         .and_then(|v| v.as_str())
         .unwrap_or(qrcode_id);
 
-    let resp = LoginResponse {
+    Ok(LoginResponse {
         status: "need_qr".to_string(),
         qr_url: Some(qrcode_content.to_string()),
         temp_token: Some(qrcode_id.to_string()),
         token: None,
         base_url: None,
         error: None,
-    };
-    Ok(to_msgpack(&resp).unwrap_or_default())
+    })
 }
 
 /// Check QR code scan status
 #[plugin_fn]
-pub fn check_login(params: Vec<u8>) -> FnResult<Vec<u8>> {
-    let params: QrStatusParams = match from_msgpack(&params) {
-        Some(p) => p,
-        None => {
-            let resp = QrStatusResponse {
-                status: "error".to_string(),
-                token: None,
-                base_url: None,
-                error: Some("invalid params: failed to deserialize msgpack".to_string()),
-            };
-            return Ok(to_msgpack(&resp).unwrap_or_default());
-        }
-    };
-
+pub fn check_login(params: QrStatusParams) -> FnResult<QrStatusResponse> {
     let resp_text = match api_get(
         "ilink/bot/get_qrcode_status",
         "",
@@ -264,42 +217,28 @@ pub fn check_login(params: Vec<u8>) -> FnResult<Vec<u8>> {
     ) {
         Ok(s) => s,
         Err(e) => {
-            let resp = QrStatusResponse {
+            return Ok(QrStatusResponse {
                 status: "error".to_string(),
                 token: None,
                 base_url: None,
                 error: Some(e),
-            };
-            return Ok(to_msgpack(&resp).unwrap_or_default());
+            });
         }
     };
 
     let result = parse_qr_status(&resp_text);
 
-    let resp = QrStatusResponse {
+    Ok(QrStatusResponse {
         status: result.status,
         token: result.token,
         base_url: result.base_url,
         error: result.error,
-    };
-    Ok(to_msgpack(&resp).unwrap_or_default())
+    })
 }
 
 /// Poll for new messages
 #[plugin_fn]
-pub fn poll(params: Vec<u8>) -> FnResult<Vec<u8>> {
-    let params: PollParams = match from_msgpack(&params) {
-        Some(p) => p,
-        None => {
-            let resp = PollResponse {
-                messages: vec![],
-                get_updates_buf: String::new(),
-                error: Some("invalid params: failed to deserialize msgpack".to_string()),
-            };
-            return Ok(to_msgpack(&resp).unwrap_or_default());
-        }
-    };
-
+pub fn poll(params: PollParams) -> FnResult<PollResponse> {
     let route_tag = get_route_tag();
 
     let body = serde_json::json!({
@@ -311,12 +250,11 @@ pub fn poll(params: Vec<u8>) -> FnResult<Vec<u8>> {
     let resp_text = match api_post("ilink/bot/getupdates", &params.token, body, &route_tag) {
         Ok(s) => s,
         Err(e) => {
-            let resp = PollResponse {
+            return Ok(PollResponse {
                 messages: vec![],
                 get_updates_buf: String::new(),
                 error: Some(e),
-            };
-            return Ok(to_msgpack(&resp).unwrap_or_default());
+            });
         }
     };
 
@@ -331,28 +269,16 @@ pub fn poll(params: Vec<u8>) -> FnResult<Vec<u8>> {
         }
     }
 
-    let resp = PollResponse {
+    Ok(PollResponse {
         messages: result.messages,
         get_updates_buf: result.get_updates_buf,
         error: result.error,
-    };
-    Ok(to_msgpack(&resp).unwrap_or_default())
+    })
 }
 
 /// Send a text message
 #[plugin_fn]
-pub fn send_text(params: Vec<u8>) -> FnResult<Vec<u8>> {
-    let params: SendTextParams = match from_msgpack(&params) {
-        Some(p) => p,
-        None => {
-            let resp = SendResponse {
-                success: false,
-                error: Some("invalid params: failed to deserialize msgpack".to_string()),
-            };
-            return Ok(to_msgpack(&resp).unwrap_or_default());
-        }
-    };
-
+pub fn send_text(params: SendTextParams) -> FnResult<SendResponse> {
     let route_tag = get_route_tag();
 
     info!(
@@ -369,11 +295,10 @@ pub fn send_text(params: Vec<u8>) -> FnResult<Vec<u8>> {
                 "send_text: no pending context_token for user {}, cannot send",
                 params.to_user_id
             );
-            let resp = SendResponse {
+            return Ok(SendResponse {
                 success: false,
                 error: Some("no pending context_token for user".to_string()),
-            };
-            return Ok(to_msgpack(&resp).unwrap_or_default());
+            });
         }
     };
 
@@ -391,11 +316,10 @@ pub fn send_text(params: Vec<u8>) -> FnResult<Vec<u8>> {
         Ok(s) => s,
         Err(e) => {
             error!("send_text: HTTP error: {}", e);
-            let resp = SendResponse {
+            return Ok(SendResponse {
                 success: false,
                 error: Some(e),
-            };
-            return Ok(to_msgpack(&resp).unwrap_or_default());
+            });
         }
     };
 
@@ -406,38 +330,24 @@ pub fn send_text(params: Vec<u8>) -> FnResult<Vec<u8>> {
     );
     let result = parse_send_response(&resp_text);
 
-    let resp = SendResponse {
+    Ok(SendResponse {
         success: result.is_ok(),
         error: result.err(),
-    };
-    Ok(to_msgpack(&resp).unwrap_or_default())
+    })
 }
 
 /// Get upload URL for media - returns the upload parameters
 #[plugin_fn]
-pub fn get_upload_url(params: Vec<u8>) -> FnResult<Vec<u8>> {
-    let params: GetUploadUrlParams = match from_msgpack(&params) {
-        Some(p) => p,
-        None => {
-            let resp = UploadResponse {
-                upload_param: String::new(),
-                aes_key: "error: failed to deserialize msgpack".to_string(),
-                error: None,
-            };
-            return Ok(to_msgpack(&resp).unwrap_or_default());
-        }
-    };
-
+pub fn get_upload_url(params: GetUploadUrlParams) -> FnResult<UploadResponse> {
     let file_data = match base64::engine::general_purpose::STANDARD.decode(&params.file_data_base64)
     {
         Ok(d) => d,
         Err(e) => {
-            let resp = UploadResponse {
+            return Ok(UploadResponse {
                 upload_param: String::new(),
                 aes_key: format!("error: {}", e),
                 error: None,
-            };
-            return Ok(to_msgpack(&resp).unwrap_or_default());
+            });
         }
     };
 
@@ -451,24 +361,22 @@ pub fn get_upload_url(params: Vec<u8>) -> FnResult<Vec<u8>> {
         match build_media_upload(&params.to_user_id, &file_data, &params.file_name, med_type) {
             Ok(r) => r,
             Err(e) => {
-                let resp = UploadResponse {
+                return Ok(UploadResponse {
                     upload_param: String::new(),
                     aes_key: format!("error: {}", e),
                     error: None,
-                };
-                return Ok(to_msgpack(&resp).unwrap_or_default());
+                });
             }
         };
 
     let upload_body: serde_json::Value = match serde_json::from_str(&upload_req_json) {
         Ok(v) => v,
         Err(e) => {
-            let resp = UploadResponse {
+            return Ok(UploadResponse {
                 upload_param: String::new(),
                 aes_key: format!("error: {}", e),
                 error: None,
-            };
-            return Ok(to_msgpack(&resp).unwrap_or_default());
+            });
         }
     };
 
@@ -482,24 +390,22 @@ pub fn get_upload_url(params: Vec<u8>) -> FnResult<Vec<u8>> {
     ) {
         Ok(s) => s,
         Err(e) => {
-            let resp = UploadResponse {
+            return Ok(UploadResponse {
                 upload_param: String::new(),
                 aes_key: format!("error: {}", e),
                 error: None,
-            };
-            return Ok(to_msgpack(&resp).unwrap_or_default());
+            });
         }
     };
 
     let upload_resp: serde_json::Value = match serde_json::from_str(&upload_resp_text) {
         Ok(v) => v,
         Err(e) => {
-            let resp = UploadResponse {
+            return Ok(UploadResponse {
                 upload_param: String::new(),
                 aes_key: format!("error: {}", e),
                 error: None,
-            };
-            return Ok(to_msgpack(&resp).unwrap_or_default());
+            });
         }
     };
 
@@ -508,28 +414,16 @@ pub fn get_upload_url(params: Vec<u8>) -> FnResult<Vec<u8>> {
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
-    let resp = UploadResponse {
+    Ok(UploadResponse {
         upload_param: upload_param.to_string(),
         aes_key: aes_key_b64,
         error: None,
-    };
-    Ok(to_msgpack(&resp).unwrap_or_default())
+    })
 }
 
 /// Send a media message
 #[plugin_fn]
-pub fn send_media(params: Vec<u8>) -> FnResult<Vec<u8>> {
-    let params: SendMediaParams = match from_msgpack(&params) {
-        Some(p) => p,
-        None => {
-            let resp = SendResponse {
-                success: false,
-                error: Some("invalid params: failed to deserialize msgpack".to_string()),
-            };
-            return Ok(to_msgpack(&resp).unwrap_or_default());
-        }
-    };
-
+pub fn send_media(params: SendMediaParams) -> FnResult<SendResponse> {
     let med_type = match params.media_type.as_str() {
         "image" => UPLOAD_MEDIA_IMAGE,
         "video" => UPLOAD_MEDIA_VIDEO,
@@ -552,35 +446,25 @@ pub fn send_media(params: Vec<u8>) -> FnResult<Vec<u8>> {
     let resp_text = match api_post("ilink/bot/sendmessage", &params.token, body, &route_tag) {
         Ok(s) => s,
         Err(e) => {
-            let resp = SendResponse {
+            return Ok(SendResponse {
                 success: false,
                 error: Some(e),
-            };
-            return Ok(to_msgpack(&resp).unwrap_or_default());
+            });
         }
     };
 
     let result = parse_send_response(&resp_text);
 
-    let resp = SendResponse {
+    Ok(SendResponse {
         success: result.is_ok(),
         error: result.err(),
-    };
-    Ok(to_msgpack(&resp).unwrap_or_default())
+    })
 }
 
 /// Set typing indicator (generic interface for agent).
 /// typing=true means start typing, typing=false means stop typing.
 #[plugin_fn]
-pub fn set_typing(params: Vec<u8>) -> FnResult<Vec<u8>> {
-    let params: SetTypingParams = match from_msgpack(&params) {
-        Some(p) => p,
-        None => {
-            error!("set_typing: invalid params");
-            return Ok(to_msgpack(&()).unwrap_or_default());
-        }
-    };
-
+pub fn set_typing(params: SetTypingParams) -> FnResult<()> {
     let route_tag = get_route_tag();
     let status = if params.typing { 1 } else { 2 };
 
@@ -591,7 +475,7 @@ pub fn set_typing(params: Vec<u8>) -> FnResult<Vec<u8>> {
             Ok(ticket) => ticket,
             Err(e) => {
                 error!("set_typing: failed to get typing_ticket: {}", e);
-                return Ok(to_msgpack(&()).unwrap_or_default());
+                return Ok(());
             }
         },
     };
@@ -609,11 +493,11 @@ pub fn set_typing(params: Vec<u8>) -> FnResult<Vec<u8>> {
     );
 
     match api_post("ilink/bot/sendtyping", &params.token, full_body, &route_tag) {
-        Ok(_resp_text) => Ok(to_msgpack(&()).unwrap_or_default()),
+        Ok(_resp_text) => Ok(()),
         Err(e) => {
             error!("set_typing: HTTP error: {}", e);
             // Typing is best-effort, don't fail
-            Ok(to_msgpack(&()).unwrap_or_default())
+            Ok(())
         }
     }
 }

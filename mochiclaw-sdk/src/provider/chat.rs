@@ -1,11 +1,13 @@
 //! Chat types for LLM requests and responses
 
+use super::types::Message;
+use crate::tool::Tool;
+use extism_convert::{FromBytes, ToBytes, Msgpack};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use crate::tool::Tool;
-use super::types::Message;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromBytes)]
+#[encoding(Msgpack)]
 pub struct ChatRequest {
     pub model: String,
     pub messages: Vec<Message>,
@@ -36,7 +38,8 @@ pub struct ToolCall {
     pub arguments: HashMap<String, serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromBytes, ToBytes)]
+#[encoding(Msgpack)]
 pub struct ChatResponse {
     pub content: String,
     #[serde(default)]

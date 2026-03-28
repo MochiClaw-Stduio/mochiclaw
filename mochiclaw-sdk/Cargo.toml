@@ -10,4 +10,5 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 rmp-serde = "1"
 extism-pdk = "1"
+extism-convert = { version = "1", features = ["msgpack"] }
 thiserror.workspace = true
