@@ -1,0 +1,12 @@
+name = "mochiclaw-fs"
+version = "0.1.0"
+description = "Filesystem tools: read_file, write_file, edit_file, list_dir"
+
+[capabilities.fs]
+enabled = true
+allowed_root = "${workspace}"
+read_whitelist = ["${workspace}"]
+write_whitelist = ["${workspace}"]
+
+[features]
+tool = true

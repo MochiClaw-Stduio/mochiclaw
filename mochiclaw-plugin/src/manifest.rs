@@ -38,14 +38,56 @@ pub struct PluginSettingsSpec {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Capabilities {
-    /// Allowed HTTP hosts for this plugin
+    /// Network access capabilities
     #[serde(default)]
-    pub allowed_hosts: Vec<String>,
+    pub network: NetworkCapabilities,
+    /// Filesystem access capabilities
+    #[serde(default)]
+    pub fs: FsCapabilities,
     /// Allowed KV read access to other plugins' key-value stores
     /// Format: list of plugin names this plugin can read KV from
     /// Write access is always limited to own plugin KV only
     #[serde(default)]
     pub allowed_kv_read: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct NetworkCapabilities {
+    /// Whether network access is enabled
+    #[serde(default = "default_false")]
+    pub enabled: bool,
+    /// Allowed HTTP hosts for this plugin
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
+}
+
+fn default_false() -> bool {
+    false
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct FsCapabilities {
+    /// Whether filesystem access is enabled
+    #[serde(default = "default_false")]
+    pub enabled: bool,
+    /// Allowed root directory for filesystem operations (sandbox boundary)
+    /// Supports ${workspace} placeholder which is replaced at runtime
+    #[serde(default)]
+    pub allowed_root: String,
+    /// Allowed filesystem read paths (absolute paths)
+    /// If empty, read is allowed for all paths within allowed_root
+    #[serde(default)]
+    pub read_whitelist: Vec<String>,
+    /// Allowed filesystem write paths (absolute paths)
+    /// If empty, write is allowed for all paths within allowed_root
+    #[serde(default)]
+    pub write_whitelist: Vec<String>,
+    /// Disallowed filesystem read paths (takes precedence over whitelist)
+    #[serde(default)]
+    pub read_blacklist: Vec<String>,
+    /// Disallowed filesystem write paths (takes precedence over whitelist)
+    #[serde(default)]
+    pub write_blacklist: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

@@ -5,6 +5,7 @@
 
 use crate::discover::DiscoveredPlugin;
 use crate::error::Error;
+use crate::host::fs::FsContext;
 use crate::host::http::HttpContext;
 use crate::host::kv::PluginKV;
 use crate::manifest::PluginManifest;
@@ -12,7 +13,7 @@ use extism::{CompiledPlugin, Manifest, Plugin, PluginBuilder, Pool, PoolBuilder,
 use extism_convert::{FromBytesOwned, ToBytes};
 use mochiclaw_sdk::tool::{ToolExecutionRequest, ToolExecutionResponse};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -30,6 +31,8 @@ pub struct PluginHost {
     use_system_proxy: bool,
     /// Manifests for all loaded plugins
     manifests: HashMap<String, PluginManifest>,
+    /// Workspace directory for fs plugins
+    workspace: Option<String>,
 }
 
 impl PluginHost {
@@ -41,6 +44,7 @@ impl PluginHost {
             fallback_proxy_url: None,
             use_system_proxy: false,
             manifests: HashMap::new(),
+            workspace: None,
         }
     }
 
@@ -49,6 +53,17 @@ impl PluginHost {
         self.fallback_proxy_url = proxy_url;
         self.use_system_proxy = use_system_proxy;
         self
+    }
+
+    /// Set the workspace directory for fs plugins
+    pub fn with_workspace(mut self, workspace: String) -> Self {
+        self.workspace = Some(workspace);
+        self
+    }
+
+    /// Set workspace after construction
+    pub fn set_workspace(&mut self, workspace: String) {
+        self.workspace = Some(workspace);
     }
 
     /// Load a plugin with its manifest
@@ -70,32 +85,80 @@ impl PluginHost {
             .map_err(|e| Error::Plugin(format!("failed to read {}: {}", wasm_path.display(), e)))?;
 
         // Build extism Manifest with allowed hosts
-        let extism_manifest = Manifest::new([Wasm::Data {
+        let mut extism_manifest = Manifest::new([Wasm::Data {
             data: wasm_bytes,
             meta: Default::default(),
         }])
-        .with_allowed_hosts(manifest.capabilities.allowed_hosts.iter().cloned());
+        .with_allowed_hosts(
+            manifest
+                .capabilities
+                .network
+                .allowed_hosts
+                .iter()
+                .cloned(),
+        );
+
+        // Inject workspace config if set (for fs plugins)
+        if let Some(ref workspace) = self.workspace {
+            extism_manifest = extism_manifest.with_config_key("workspace", workspace.clone());
+        }
 
         // Determine effective proxy: per-plugin proxy_url > fallback_proxy_url
         let effective_proxy = proxy_url.or_else(|| self.fallback_proxy_url.clone());
-        tracing::debug!("loading plugin '{}', effective_proxy={:?}", name, effective_proxy);
+        tracing::debug!(
+            "loading plugin '{}', effective_proxy={:?}",
+            name,
+            effective_proxy
+        );
 
-        // Create host functions (rand + KV + HTTP with proxy support)
-        let http_context = HttpContext::new(
-            effective_proxy,
-            manifest.capabilities.allowed_hosts.clone(),
-            self.use_system_proxy,
-        )
-        .map_err(|e| Error::Plugin(format!("failed to create HTTP context: {}", e)))?;
-
-        let host_funcs = crate::host::HostFunctionsBuilder::new()
+        // Build host functions builder (always includes rand + KV)
+        let mut builder = crate::host::HostFunctionsBuilder::new()
             .with_kv(
                 self.kv.clone(),
                 name,
                 manifest.capabilities.allowed_kv_read.clone(),
+            );
+
+        // Add HTTP functions if network is enabled
+        if manifest.capabilities.network.enabled {
+            let http_context = HttpContext::new(
+                effective_proxy,
+                manifest.capabilities.network.allowed_hosts.clone(),
+                self.use_system_proxy,
             )
-            .with_http(http_context)
-            .build();
+            .map_err(|e| Error::Plugin(format!("failed to create HTTP context: {}", e)))?;
+            builder = builder.with_http(http_context);
+        }
+
+        // Add FS functions if fs is enabled
+        if manifest.capabilities.fs.enabled {
+            let workspace = self
+                .workspace
+                .clone()
+                .unwrap_or_else(|| ".".to_string());
+
+            // Resolve ${workspace} placeholder in allowed_root
+            let allowed_root = if manifest.capabilities.fs.allowed_root.is_empty() {
+                workspace.clone()
+            } else {
+                manifest
+                    .capabilities
+                    .fs
+                    .allowed_root
+                    .replace("${workspace}", &workspace)
+            };
+
+            let fs_context = FsContext::new(
+                allowed_root.into(),
+                manifest.capabilities.fs.read_whitelist.iter().map(PathBuf::from).collect(),
+                manifest.capabilities.fs.write_whitelist.iter().map(PathBuf::from).collect(),
+                manifest.capabilities.fs.read_blacklist.iter().map(PathBuf::from).collect(),
+                manifest.capabilities.fs.write_blacklist.iter().map(PathBuf::from).collect(),
+            );
+            builder = builder.with_fs(fs_context);
+        }
+
+        let host_funcs = builder.build();
 
         tracing::debug!(
             "registering {} host functions for plugin '{}'",
@@ -138,10 +201,11 @@ impl PluginHost {
         self.manifests.insert(name.to_string(), manifest.clone());
 
         tracing::info!(
-            "loaded plugin '{}' from {} (hosts: {:?})",
+            "loaded plugin '{}' from {} (network: {:?}, fs: {:?})",
             name,
             wasm_path.display(),
-            manifest.capabilities.allowed_hosts
+            manifest.capabilities.network.enabled,
+            manifest.capabilities.fs.enabled
         );
         Ok(())
     }
@@ -166,11 +230,14 @@ impl PluginHost {
         function: &str,
         input: &'a T,
     ) -> Result<R, Error> {
-        let pool = self.pools.get(name)
+        let pool = self
+            .pools
+            .get(name)
             .ok_or_else(|| Error::Plugin(format!("plugin '{}' not found", name)))?;
 
         let timeout = Duration::from_secs(120);
-        let mut plugin = pool.get(timeout)
+        let mut plugin = pool
+            .get(timeout)
             .map_err(|e| Error::Plugin(format!("pool get timeout: {}", e)))?
             .ok_or_else(|| Error::Plugin("pool get timeout".into()))?;
 

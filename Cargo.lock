@@ -1645,6 +1645,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "mochiclaw-fs"
+version = "0.1.0"
+dependencies = [
+ "extism-manifest",
+ "extism-pdk",
+ "mochiclaw-sdk",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mochiclaw-openai"
 version = "0.1.0"
 dependencies = [
@@ -1671,6 +1682,7 @@ dependencies = [
  "rmp-serde",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "toml 0.8.23",
