@@ -5,7 +5,10 @@
 use base64::Engine;
 use extism_pdk::*;
 use mochiclaw_sdk::host::http::HttpClient;
+use rmp_serde::{Deserializer, Serializer};
+use serde::Serialize;
 use std::collections::HashMap;
+use std::io::Cursor;
 
 use crate::constants::*;
 use crate::messages::{
@@ -16,6 +19,18 @@ use crate::session::{
     cache_context_token, cache_typing_ticket, get_route_tag, pop_context_token, set_route_tag,
 };
 use crate::types::*;
+
+/// Deserialize a value from MessagePack bytes
+fn from_msgpack<'a, T: serde::Deserialize<'a>>(buf: &'a [u8]) -> Option<T> {
+    T::deserialize(&mut Deserializer::new(Cursor::new(buf))).ok()
+}
+
+/// Serialize a value to MessagePack bytes
+fn to_msgpack<T: Serialize>(value: &T) -> Option<Vec<u8>> {
+    let mut buf = Vec::new();
+    value.serialize(&mut Serializer::new(&mut buf)).ok()?;
+    Some(buf)
+}
 
 // ============================================================================
 // HTTP Helpers
@@ -126,23 +141,26 @@ fn api_post(
 /// Perform QR code login flow
 /// Returns QR code URL for display, or token if already logged in
 #[plugin_fn]
-pub fn login(params_json: String) -> FnResult<String> {
-    let params: LoginParams = match serde_json::from_str(&params_json) {
-        Ok(p) => p,
-        Err(e) => {
+pub fn login(params: Vec<u8>) -> FnResult<Vec<u8>> {
+    let params: LoginParams = match from_msgpack(&params) {
+        Some(p) => p,
+        None => {
             let resp = LoginResponse {
                 status: "error".to_string(),
                 qr_url: None,
                 temp_token: None,
                 token: None,
                 base_url: None,
-                error: Some(format!("invalid params: {}", e)),
+                error: Some("invalid params: failed to deserialize msgpack".to_string()),
             };
-            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+            return Ok(to_msgpack(&resp).unwrap_or_default());
         }
     };
 
-    let config: WeixinConfig = serde_json::from_str(&params.config_json).unwrap_or_default();
+    let config: WeixinConfig = match from_msgpack(&params.config) {
+        Some(c) => c,
+        None => WeixinConfig::default(),
+    };
 
     // Store route_tag for use in API calls
     set_route_tag(&config.route_tag);
@@ -157,7 +175,7 @@ pub fn login(params_json: String) -> FnResult<String> {
             base_url: Some(config.base_url),
             error: None,
         };
-        return Ok(serde_json::to_string(&resp).unwrap_or_default());
+        return Ok(to_msgpack(&resp).unwrap_or_default());
     }
 
     // Fetch QR code
@@ -181,7 +199,7 @@ pub fn login(params_json: String) -> FnResult<String> {
                 base_url: None,
                 error: Some(e),
             };
-            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+            return Ok(to_msgpack(&resp).unwrap_or_default());
         }
     };
 
@@ -196,7 +214,7 @@ pub fn login(params_json: String) -> FnResult<String> {
                 base_url: None,
                 error: Some(e.to_string()),
             };
-            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+            return Ok(to_msgpack(&resp).unwrap_or_default());
         }
     };
 
@@ -214,22 +232,22 @@ pub fn login(params_json: String) -> FnResult<String> {
         base_url: None,
         error: None,
     };
-    Ok(serde_json::to_string(&resp).unwrap_or_default())
+    Ok(to_msgpack(&resp).unwrap_or_default())
 }
 
 /// Check QR code scan status
 #[plugin_fn]
-pub fn check_login(params_json: String) -> FnResult<String> {
-    let params: QrStatusParams = match serde_json::from_str(&params_json) {
-        Ok(p) => p,
-        Err(e) => {
+pub fn check_login(params: Vec<u8>) -> FnResult<Vec<u8>> {
+    let params: QrStatusParams = match from_msgpack(&params) {
+        Some(p) => p,
+        None => {
             let resp = QrStatusResponse {
                 status: "error".to_string(),
                 token: None,
                 base_url: None,
-                error: Some(format!("invalid params: {}", e)),
+                error: Some("invalid params: failed to deserialize msgpack".to_string()),
             };
-            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+            return Ok(to_msgpack(&resp).unwrap_or_default());
         }
     };
 
@@ -251,7 +269,7 @@ pub fn check_login(params_json: String) -> FnResult<String> {
                 base_url: None,
                 error: Some(e),
             };
-            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+            return Ok(to_msgpack(&resp).unwrap_or_default());
         }
     };
 
@@ -263,21 +281,21 @@ pub fn check_login(params_json: String) -> FnResult<String> {
         base_url: result.base_url,
         error: result.error,
     };
-    Ok(serde_json::to_string(&resp).unwrap_or_default())
+    Ok(to_msgpack(&resp).unwrap_or_default())
 }
 
 /// Poll for new messages
 #[plugin_fn]
-pub fn poll(params_json: String) -> FnResult<String> {
-    let params: PollParams = match serde_json::from_str(&params_json) {
-        Ok(p) => p,
-        Err(e) => {
+pub fn poll(params: Vec<u8>) -> FnResult<Vec<u8>> {
+    let params: PollParams = match from_msgpack(&params) {
+        Some(p) => p,
+        None => {
             let resp = PollResponse {
                 messages: vec![],
                 get_updates_buf: String::new(),
-                error: Some(format!("invalid params: {}", e)),
+                error: Some("invalid params: failed to deserialize msgpack".to_string()),
             };
-            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+            return Ok(to_msgpack(&resp).unwrap_or_default());
         }
     };
 
@@ -297,7 +315,7 @@ pub fn poll(params_json: String) -> FnResult<String> {
                 get_updates_buf: String::new(),
                 error: Some(e),
             };
-            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+            return Ok(to_msgpack(&resp).unwrap_or_default());
         }
     };
 
@@ -317,20 +335,20 @@ pub fn poll(params_json: String) -> FnResult<String> {
         get_updates_buf: result.get_updates_buf,
         error: result.error,
     };
-    Ok(serde_json::to_string(&resp).unwrap_or_default())
+    Ok(to_msgpack(&resp).unwrap_or_default())
 }
 
 /// Send a text message
 #[plugin_fn]
-pub fn send_text(params_json: String) -> FnResult<String> {
-    let params: SendTextParams = match serde_json::from_str(&params_json) {
-        Ok(p) => p,
-        Err(e) => {
+pub fn send_text(params: Vec<u8>) -> FnResult<Vec<u8>> {
+    let params: SendTextParams = match from_msgpack(&params) {
+        Some(p) => p,
+        None => {
             let resp = SendResponse {
                 success: false,
-                error: Some(format!("invalid params: {}", e)),
+                error: Some("invalid params: failed to deserialize msgpack".to_string()),
             };
-            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+            return Ok(to_msgpack(&resp).unwrap_or_default());
         }
     };
 
@@ -354,7 +372,7 @@ pub fn send_text(params_json: String) -> FnResult<String> {
                 success: false,
                 error: Some("no pending context_token for user".to_string()),
             };
-            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+            return Ok(to_msgpack(&resp).unwrap_or_default());
         }
     };
 
@@ -376,7 +394,7 @@ pub fn send_text(params_json: String) -> FnResult<String> {
                 success: false,
                 error: Some(e),
             };
-            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+            return Ok(to_msgpack(&resp).unwrap_or_default());
         }
     };
 
@@ -391,21 +409,21 @@ pub fn send_text(params_json: String) -> FnResult<String> {
         success: result.is_ok(),
         error: result.err(),
     };
-    Ok(serde_json::to_string(&resp).unwrap_or_default())
+    Ok(to_msgpack(&resp).unwrap_or_default())
 }
 
 /// Get upload URL for media - returns the upload parameters
 #[plugin_fn]
-pub fn get_upload_url(params_json: String) -> FnResult<String> {
-    let params: GetUploadUrlParams = match serde_json::from_str(&params_json) {
-        Ok(p) => p,
-        Err(e) => {
+pub fn get_upload_url(params: Vec<u8>) -> FnResult<Vec<u8>> {
+    let params: GetUploadUrlParams = match from_msgpack(&params) {
+        Some(p) => p,
+        None => {
             let resp = UploadResponse {
                 upload_param: String::new(),
-                aes_key: format!("error: {}", e),
+                aes_key: "error: failed to deserialize msgpack".to_string(),
                 error: None,
             };
-            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+            return Ok(to_msgpack(&resp).unwrap_or_default());
         }
     };
 
@@ -418,7 +436,7 @@ pub fn get_upload_url(params_json: String) -> FnResult<String> {
                 aes_key: format!("error: {}", e),
                 error: None,
             };
-            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+            return Ok(to_msgpack(&resp).unwrap_or_default());
         }
     };
 
@@ -437,7 +455,7 @@ pub fn get_upload_url(params_json: String) -> FnResult<String> {
                     aes_key: format!("error: {}", e),
                     error: None,
                 };
-                return Ok(serde_json::to_string(&resp).unwrap_or_default());
+                return Ok(to_msgpack(&resp).unwrap_or_default());
             }
         };
 
@@ -449,7 +467,7 @@ pub fn get_upload_url(params_json: String) -> FnResult<String> {
                 aes_key: format!("error: {}", e),
                 error: None,
             };
-            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+            return Ok(to_msgpack(&resp).unwrap_or_default());
         }
     };
 
@@ -468,7 +486,7 @@ pub fn get_upload_url(params_json: String) -> FnResult<String> {
                 aes_key: format!("error: {}", e),
                 error: None,
             };
-            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+            return Ok(to_msgpack(&resp).unwrap_or_default());
         }
     };
 
@@ -480,7 +498,7 @@ pub fn get_upload_url(params_json: String) -> FnResult<String> {
                 aes_key: format!("error: {}", e),
                 error: None,
             };
-            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+            return Ok(to_msgpack(&resp).unwrap_or_default());
         }
     };
 
@@ -489,24 +507,25 @@ pub fn get_upload_url(params_json: String) -> FnResult<String> {
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
-    Ok(serde_json::json!({
-        "upload_param": upload_param,
-        "aes_key": aes_key_b64,
-    })
-    .to_string())
+    let resp = UploadResponse {
+        upload_param: upload_param.to_string(),
+        aes_key: aes_key_b64,
+        error: None,
+    };
+    Ok(to_msgpack(&resp).unwrap_or_default())
 }
 
 /// Send a media message
 #[plugin_fn]
-pub fn send_media(params_json: String) -> FnResult<String> {
-    let params: SendMediaParams = match serde_json::from_str(&params_json) {
-        Ok(p) => p,
-        Err(e) => {
+pub fn send_media(params: Vec<u8>) -> FnResult<Vec<u8>> {
+    let params: SendMediaParams = match from_msgpack(&params) {
+        Some(p) => p,
+        None => {
             let resp = SendResponse {
                 success: false,
-                error: Some(format!("invalid params: {}", e)),
+                error: Some("invalid params: failed to deserialize msgpack".to_string()),
             };
-            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+            return Ok(to_msgpack(&resp).unwrap_or_default());
         }
     };
 
@@ -536,7 +555,7 @@ pub fn send_media(params_json: String) -> FnResult<String> {
                 success: false,
                 error: Some(e),
             };
-            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+            return Ok(to_msgpack(&resp).unwrap_or_default());
         }
     };
 
@@ -546,21 +565,20 @@ pub fn send_media(params_json: String) -> FnResult<String> {
         success: result.is_ok(),
         error: result.err(),
     };
-    Ok(serde_json::to_string(&resp).unwrap_or_default())
+    Ok(to_msgpack(&resp).unwrap_or_default())
 }
 
 /// Get config including typing_ticket for a user
-#[plugin_fn]
-pub fn get_config(params_json: String) -> FnResult<String> {
-    let params: GetConfigParams = match serde_json::from_str(&params_json) {
-        Ok(p) => p,
-        Err(e) => {
+pub fn get_config(params: Vec<u8>) -> FnResult<Vec<u8>> {
+    let params: GetConfigParams = match from_msgpack(&params) {
+        Some(p) => p,
+        None => {
             let resp = GetConfigResponse {
                 success: false,
                 typing_ticket: String::new(),
-                error: Some(format!("invalid params: {}", e)),
+                error: Some("invalid params: failed to deserialize msgpack".to_string()),
             };
-            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+            return Ok(to_msgpack(&resp).unwrap_or_default());
         }
     };
 
@@ -580,7 +598,7 @@ pub fn get_config(params_json: String) -> FnResult<String> {
                 typing_ticket: String::new(),
                 error: Some(e),
             };
-            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+            return Ok(to_msgpack(&resp).unwrap_or_default());
         }
     };
 
@@ -593,7 +611,7 @@ pub fn get_config(params_json: String) -> FnResult<String> {
                 typing_ticket,
                 error: None,
             };
-            Ok(serde_json::to_string(&resp).unwrap_or_default())
+            Ok(to_msgpack(&resp).unwrap_or_default())
         }
         Err(e) => {
             let resp = GetConfigResponse {
@@ -601,7 +619,7 @@ pub fn get_config(params_json: String) -> FnResult<String> {
                 typing_ticket: String::new(),
                 error: Some(e),
             };
-            Ok(serde_json::to_string(&resp).unwrap_or_default())
+            Ok(to_msgpack(&resp).unwrap_or_default())
         }
     }
 }
@@ -609,12 +627,12 @@ pub fn get_config(params_json: String) -> FnResult<String> {
 /// Set typing indicator (generic interface for agent).
 /// typing=true means start typing, typing=false means stop typing.
 #[plugin_fn]
-pub fn set_typing(params_json: String) -> FnResult<String> {
-    let params: SetTypingParams = match serde_json::from_str(&params_json) {
-        Ok(p) => p,
-        Err(e) => {
-            error!("set_typing: invalid params: {}", e);
-            return Ok("{}".to_string());
+pub fn set_typing(params: Vec<u8>) -> FnResult<Vec<u8>> {
+    let params: SetTypingParams = match from_msgpack(&params) {
+        Some(p) => p,
+        None => {
+            error!("set_typing: invalid params");
+            return Ok(to_msgpack(&()).unwrap_or_default());
         }
     };
 
@@ -624,15 +642,13 @@ pub fn set_typing(params_json: String) -> FnResult<String> {
     // Get typing_ticket from cache, or fetch via get_config if not cached
     let typing_ticket = match crate::session::get_typing_ticket(&params.chat_id) {
         Some(ticket) => ticket,
-        None => {
-            match fetch_typing_ticket(&params.token, &params.chat_id, &route_tag) {
-                Ok(ticket) => ticket,
-                Err(e) => {
-                    error!("set_typing: failed to get typing_ticket: {}", e);
-                    return Ok("{}".to_string());
-                }
+        None => match fetch_typing_ticket(&params.token, &params.chat_id, &route_tag) {
+            Ok(ticket) => ticket,
+            Err(e) => {
+                error!("set_typing: failed to get typing_ticket: {}", e);
+                return Ok(to_msgpack(&()).unwrap_or_default());
             }
-        }
+        },
     };
 
     let full_body = serde_json::json!({
@@ -648,11 +664,11 @@ pub fn set_typing(params_json: String) -> FnResult<String> {
     );
 
     match api_post("ilink/bot/sendtyping", &params.token, full_body, &route_tag) {
-        Ok(_resp_text) => Ok("{}".to_string()),
+        Ok(_resp_text) => Ok(to_msgpack(&()).unwrap_or_default()),
         Err(e) => {
             error!("set_typing: HTTP error: {}", e);
             // Typing is best-effort, don't fail
-            Ok("{}".to_string())
+            Ok(to_msgpack(&()).unwrap_or_default())
         }
     }
 }
@@ -679,28 +695,6 @@ fn fetch_typing_ticket(
         }
         Err(e) => Err(e),
     }
-}
-
-/// Parse a raw update JSON into InboundMessage JSON (legacy function)
-#[plugin_fn]
-pub fn parse_update(raw_json: String) -> FnResult<String> {
-    let result = parse_messages(&raw_json);
-
-    let messages: Vec<serde_json::Value> = result
-        .messages
-        .into_iter()
-        .map(|m| {
-            serde_json::json!({
-                "channel": "weixin",
-                "sender_id": m.sender_id,
-                "chat_id": m.chat_id,
-                "content": m.content,
-                "media": m.media,
-            })
-        })
-        .collect();
-
-    Ok(serde_json::to_string(&messages).unwrap_or_default())
 }
 
 /// Get plugin name

@@ -8,12 +8,26 @@ use crate::session::SessionManager;
 use mochiclaw_plugin::PluginHost;
 use mochiclaw_sdk::message::InboundMessage;
 use mochiclaw_sdk::provider::{ChatRequest, ChatResponse, Message, MessageRole};
+use rmp_serde::{Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::Cursor;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::time::{interval, timeout};
+
+/// Deserialize a value from MessagePack bytes
+fn from_msgpack<'a, T: serde::Deserialize<'a>>(buf: &'a [u8]) -> Option<T> {
+    T::deserialize(&mut Deserializer::new(Cursor::new(buf))).ok()
+}
+
+/// Serialize a value to MessagePack bytes
+fn to_msgpack<T: Serialize>(value: &T) -> Option<Vec<u8>> {
+    let mut buf = Vec::new();
+    value.serialize(&mut Serializer::new(&mut buf)).ok()?;
+    Some(buf)
+}
 
 pub struct AgentLoop {
     bus: Arc<MessageBus>,
@@ -40,10 +54,30 @@ struct PollResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+struct PollParams {
+    token: String,
+    get_updates_buf: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 struct SendResponse {
     success: bool,
     #[serde(default)]
     error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SendTextParams {
+    token: String,
+    to_user_id: String,
+    content: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SetTypingParams {
+    token: String,
+    chat_id: String,
+    typing: bool,
 }
 
 impl AgentLoop {
@@ -162,21 +196,28 @@ impl AgentLoop {
                 state.get(channel_name).cloned().unwrap_or_default()
             };
 
-            let poll_params = serde_json::json!({
-                "token": token,
-                "get_updates_buf": get_updates_buf,
-            });
+            let poll_params = PollParams {
+                token: token.to_string(),
+                get_updates_buf,
+            };
+
+            let poll_params_bytes = match to_msgpack(&poll_params) {
+                Some(b) => b,
+                None => {
+                    tracing::warn!("failed to serialize poll params for {}", channel_name);
+                    continue;
+                }
+            };
 
             // Call the channel plugin's poll function
             let result: Result<PollResponse, _> = {
                 let host = self.plugin_host.lock().await;
-                let output = match host.call(channel_name, "poll", &poll_params.to_string()) {
+                let output = match host.call(channel_name, "poll", &poll_params_bytes) {
                     Ok(o) => {
                         tracing::trace!(
-                            "poll raw output for {} (len={}): {}",
+                            "poll raw output for {} (len={})",
                             channel_name,
-                            o.len(),
-                            &o
+                            o.len()
                         );
                         o
                     }
@@ -185,9 +226,9 @@ impl AgentLoop {
                         continue;
                     }
                 };
-                serde_json::from_str(&output).map_err(|e| {
-                    tracing::warn!("failed to parse poll response for {}: {}", channel_name, e);
-                    e
+                from_msgpack(&output).ok_or_else(|| {
+                    tracing::warn!("failed to parse poll response for {}", channel_name);
+                    anyhow::anyhow!("failed to parse poll response")
                 })
             };
 
@@ -324,15 +365,15 @@ impl AgentLoop {
         // Call provider plugin
         let response = {
             let host = self.plugin_host.lock().await;
-            let request_json = serde_json::to_string(&chat_request)
-                .map_err(|e| Error::Plugin(format!("failed to serialize chat request: {}", e)))?;
+            let request_bytes = to_msgpack(&chat_request)
+                .ok_or_else(|| Error::Plugin("failed to serialize chat request".to_string()))?;
 
             let output = host
-                .call(&self.model_config.provider, "chat", &request_json)
+                .call(&self.model_config.provider, "chat", &request_bytes)
                 .map_err(|e| Error::Plugin(format!("provider call failed: {}", e)))?;
 
-            let resp: ChatResponse = serde_json::from_str(&output)
-                .map_err(|e| Error::Plugin(format!("failed to parse chat response: {}", e)))?;
+            let resp: ChatResponse = from_msgpack(&output)
+                .ok_or_else(|| Error::Plugin("failed to parse chat response".to_string()))?;
 
             if let Some(err) = resp.error {
                 return Err(Error::Plugin(format!("provider error: {}", err)));
@@ -394,21 +435,28 @@ impl AgentLoop {
         );
 
         // Note: context_token is handled internally by the channel plugin
-        let send_params = serde_json::json!({
-            "token": token,
-            "to_user_id": chat_id,
-            "content": content,
-        });
+        let send_params = SendTextParams {
+            token: token.to_string(),
+            to_user_id: chat_id.to_string(),
+            content: content.to_string(),
+        };
+
+        let send_params_bytes = match to_msgpack(&send_params) {
+            Some(b) => b,
+            None => {
+                return Err(Error::Plugin("failed to serialize send params".to_string()));
+            }
+        };
 
         let host = self.plugin_host.lock().await;
         let output = host
-            .call(channel_name, "send_text", &send_params.to_string())
+            .call(channel_name, "send_text", &send_params_bytes)
             .map_err(|e| Error::Plugin(format!("send_text failed: {}", e)))?;
 
-        tracing::debug!("send_text raw response: {}", output);
+        tracing::debug!("send_text raw response: {} bytes", output.len());
 
-        let resp: SendResponse = serde_json::from_str(&output)
-            .map_err(|e| Error::Plugin(format!("invalid send_text response: {}", e)))?;
+        let resp: SendResponse = from_msgpack(&output)
+            .ok_or_else(|| Error::Plugin("invalid send_text response".to_string()))?;
 
         if !resp.success {
             tracing::warn!("send_text failed: {:?}", resp.error);
@@ -437,14 +485,19 @@ impl AgentLoop {
             None => return,
         };
 
-        let params = serde_json::json!({
-            "token": token,
-            "chat_id": chat_id,
-            "typing": typing,
-        });
+        let params = SetTypingParams {
+            token: token.to_string(),
+            chat_id: chat_id.to_string(),
+            typing,
+        };
+
+        let params_bytes = match to_msgpack(&params) {
+            Some(b) => b,
+            None => return,
+        };
 
         let host = self.plugin_host.lock().await;
-        if let Err(e) = host.call(channel_name, "set_typing", &params.to_string()) {
+        if let Err(e) = host.call(channel_name, "set_typing", &params_bytes) {
             tracing::debug!("set_typing not supported for {}: {}", channel_name, e);
         }
     }

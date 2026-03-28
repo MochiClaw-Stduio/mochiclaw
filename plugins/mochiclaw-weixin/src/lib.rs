@@ -20,4 +20,6 @@ pub use constants::*;
 pub use types::WeixinConfig;
 
 // Re-export plugin functions
-pub use api::{check_login, get_config, get_name, get_upload_url, login, parse_update, poll, send_media, send_text, set_typing};
+pub use api::{
+    check_login, get_name, get_upload_url, login, poll, send_media, send_text, set_typing,
+};

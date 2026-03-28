@@ -125,8 +125,8 @@ impl PluginHost {
         Ok(())
     }
 
-    /// Call a plugin function
-    pub fn call(&self, name: &str, function: &str, input: &str) -> Result<String, Error> {
+    /// Call a plugin function with MessagePack encoded input/output
+    pub fn call(&self, name: &str, function: &str, input: &[u8]) -> Result<Vec<u8>, Error> {
         let pool = self.pools.get(name)
             .ok_or_else(|| Error::Plugin(format!("plugin '{}' not found", name)))?;
 
@@ -135,11 +135,9 @@ impl PluginHost {
             .map_err(|e| Error::Plugin(format!("pool get timeout: {}", e)))?
             .ok_or_else(|| Error::Plugin("pool get timeout".into()))?;
 
-        let output = plugin
+        plugin
             .call(function, input)
-            .map_err(|e| Error::Plugin(format!("call failed: {}", e)))?;
-
-        String::from_utf8(output).map_err(|e| Error::Plugin(format!("invalid UTF-8: {}", e)))
+            .map_err(|e| Error::Plugin(format!("call failed: {}", e)))
     }
 
     pub fn has_plugin(&self, name: &str) -> bool {

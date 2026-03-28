@@ -21,7 +21,7 @@ pub struct LoginResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct LoginParams {
-    pub config_json: String,
+    pub config: Vec<u8>,
 }
 
 #[derive(Debug, Serialize)]
@@ -171,12 +171,12 @@ pub struct WeixinConfig {
 
 impl WeixinConfig {
     pub fn load(path: &str) -> Option<Self> {
-        let content = std::fs::read_to_string(path).ok()?;
-        serde_json::from_str(&content).ok()
+        let content = std::fs::read(path).ok()?;
+        rmp_serde::from_slice(&content).ok()
     }
 
     pub fn save(&self, path: &str) -> Result<(), String> {
-        let content = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
+        let content = rmp_serde::to_vec(self).map_err(|e| e.to_string())?;
         std::fs::write(path, content).map_err(|e| e.to_string())
     }
 }

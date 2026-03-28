@@ -12,6 +12,7 @@ extism-pdk = "1"
 extism-manifest = "1"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+rmp-serde = "1"
 mochiclaw-sdk = { path = "../../mochiclaw-sdk" }
 base64 = "0.22"
 hex = "0.4"

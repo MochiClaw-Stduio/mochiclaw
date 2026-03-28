@@ -6,7 +6,21 @@
 use extism_pdk::*;
 use mochiclaw_sdk::host::http::HttpClient;
 use mochiclaw_sdk::provider::{ChatRequest, ChatResponse, MessageRole};
+use rmp_serde::{Deserializer, Serializer};
 use serde::Serialize;
+use std::io::Cursor;
+
+/// Deserialize a value from MessagePack bytes
+fn from_msgpack<'a, T: serde::Deserialize<'a>>(buf: &'a [u8]) -> Option<T> {
+    T::deserialize(&mut Deserializer::new(Cursor::new(buf))).ok()
+}
+
+/// Serialize a value to MessagePack bytes
+fn to_msgpack<T: Serialize>(value: &T) -> Option<Vec<u8>> {
+    let mut buf = Vec::new();
+    value.serialize(&mut Serializer::new(&mut buf)).ok()?;
+    Some(buf)
+}
 
 fn role_to_string(role: &MessageRole) -> &str {
     match role {
@@ -29,14 +43,14 @@ struct ErrorResponse {
 
 /// Non-streaming chat completion
 #[plugin_fn]
-pub fn chat(request_json: String) -> FnResult<String> {
-    let request: ChatRequest = match serde_json::from_str(&request_json) {
-        Ok(r) => r,
-        Err(e) => {
+pub fn chat(request: Vec<u8>) -> FnResult<Vec<u8>> {
+    let request: ChatRequest = match from_msgpack(&request) {
+        Some(r) => r,
+        None => {
             let response = ErrorResponse {
-                error: format!("invalid request: {}", e),
+                error: "invalid request: failed to deserialize msgpack".to_string(),
             };
-            return Ok(serde_json::to_string(&response).unwrap_or_default());
+            return Ok(to_msgpack(&response).unwrap_or_default());
         }
     };
 
@@ -74,14 +88,14 @@ pub fn chat(request_json: String) -> FnResult<String> {
                 let response = ErrorResponse {
                     error: format!("HTTP request failed: {}", e),
                 };
-                return Ok(serde_json::to_string(&response).unwrap_or_default());
+                return Ok(to_msgpack(&response).unwrap_or_default());
             }
         },
         Err(e) => {
             let response = ErrorResponse {
                 error: format!("Failed to build request: {}", e),
             };
-            return Ok(serde_json::to_string(&response).unwrap_or_default());
+            return Ok(to_msgpack(&response).unwrap_or_default());
         }
     };
 
@@ -91,7 +105,7 @@ pub fn chat(request_json: String) -> FnResult<String> {
         let response = ErrorResponse {
             error: format!("OpenAI API returned status {}: {}", status, body_str),
         };
-        return Ok(serde_json::to_string(&response).unwrap_or_default());
+        return Ok(to_msgpack(&response).unwrap_or_default());
     }
 
     // Parse the OpenAI response
@@ -103,7 +117,7 @@ pub fn chat(request_json: String) -> FnResult<String> {
             let response = ErrorResponse {
                 error: format!("failed to parse OpenAI response: {}", e),
             };
-            return Ok(serde_json::to_string(&response).unwrap_or_default());
+            return Ok(to_msgpack(&response).unwrap_or_default());
         }
     };
 
@@ -118,19 +132,19 @@ pub fn chat(request_json: String) -> FnResult<String> {
         tool_calls: Vec::new(),
         error: None,
     };
-    Ok(serde_json::to_string(&response).unwrap_or_default())
+    Ok(to_msgpack(&response).unwrap_or_default())
 }
 
 /// Streaming chat completion
 #[plugin_fn]
-pub fn chat_stream(request_json: String) -> FnResult<String> {
-    let request: ChatRequest = match serde_json::from_str(&request_json) {
-        Ok(r) => r,
-        Err(e) => {
+pub fn chat_stream(request: Vec<u8>) -> FnResult<Vec<u8>> {
+    let request: ChatRequest = match from_msgpack(&request) {
+        Some(r) => r,
+        None => {
             let response = ErrorResponse {
-                error: format!("invalid request: {}", e),
+                error: "invalid request: failed to deserialize msgpack".to_string(),
             };
-            return Ok(serde_json::to_string(&response).unwrap_or_default());
+            return Ok(to_msgpack(&response).unwrap_or_default());
         }
     };
 
@@ -170,7 +184,7 @@ pub fn chat_stream(request_json: String) -> FnResult<String> {
                     delta: format!("HTTP request failed: {}", e),
                     done: true,
                 };
-                return Ok(serde_json::to_string(&vec![chunk]).unwrap_or_default());
+                return Ok(to_msgpack(&vec![chunk]).unwrap_or_default());
             }
         },
         Err(e) => {
@@ -178,7 +192,7 @@ pub fn chat_stream(request_json: String) -> FnResult<String> {
                 delta: format!("Failed to build request: {}", e),
                 done: true,
             };
-            return Ok(serde_json::to_string(&vec![chunk]).unwrap_or_default());
+            return Ok(to_msgpack(&vec![chunk]).unwrap_or_default());
         }
     };
 
@@ -209,7 +223,7 @@ pub fn chat_stream(request_json: String) -> FnResult<String> {
         last.done = true;
     }
 
-    Ok(serde_json::to_string(&chunks).unwrap_or_default())
+    Ok(to_msgpack(&chunks).unwrap_or_default())
 }
 
 /// Get plugin name

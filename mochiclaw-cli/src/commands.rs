@@ -1,11 +1,25 @@
 //! CLI commands
 
 use anyhow::Result;
+use rmp_serde::{Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
+use std::io::Cursor;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use mochiclaw_core::{AgentLoop, Config, MessageBus, PluginHost, PluginManifest, discover};
+
+/// Deserialize a value from MessagePack bytes
+fn from_msgpack<'a, T: serde::Deserialize<'a>>(buf: &'a [u8]) -> Option<T> {
+    T::deserialize(&mut Deserializer::new(Cursor::new(buf))).ok()
+}
+
+/// Serialize a value to MessagePack bytes
+fn to_msgpack<T: Serialize>(value: &T) -> Option<Vec<u8>> {
+    let mut buf = Vec::new();
+    value.serialize(&mut Serializer::new(&mut buf)).ok()?;
+    Some(buf)
+}
 
 pub async fn start(config_path: PathBuf) -> Result<()> {
     let config = Config::from_file(&config_path)?;
@@ -136,10 +150,27 @@ pub async fn login(plugin_name: &str, config_path: PathBuf) -> Result<()> {
     plugin_host.load_plugin(plugin_name, &wasm_path, &manifest)?;
     tracing::info!("loaded plugin '{}'", plugin_name);
 
-    // Call login function with empty params
+    // Call login function with empty config
     let resp: LoginResponse = {
-        let output = plugin_host.call(plugin_name, "login", r#"{"config_json":"{}"}"#)?;
-        serde_json::from_str(&output)?
+        let login_params = LoginParams {
+            config: Vec::new(),
+        };
+        let params_bytes = to_msgpack(&login_params).unwrap_or_default();
+        let output = plugin_host.call(plugin_name, "login", &params_bytes)?;
+        match from_msgpack(&output) {
+            Some(r) => r,
+            None => {
+                // Fallback: try to parse as JSON for backwards compatibility
+                serde_json::from_str(&String::from_utf8_lossy(&output)).unwrap_or(LoginResponse {
+                    status: "error".to_string(),
+                    qr_url: None,
+                    temp_token: None,
+                    token: None,
+                    base_url: None,
+                    error: Some("failed to parse response".to_string()),
+                })
+            }
+        }
     };
 
     match resp.status.as_str() {
@@ -171,10 +202,24 @@ pub async fn login(plugin_name: &str, config_path: PathBuf) -> Result<()> {
                         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
                         let check_resp: CheckLoginResponse = {
-                            let params =
-                                serde_json::json!({ "temp_token": temp_token }).to_string();
-                            let output = plugin_host.call(plugin_name, "check_login", &params)?;
-                            serde_json::from_str(&output)?
+                            let params = QrStatusParams {
+                                temp_token: temp_token.clone(),
+                            };
+                            let params_bytes = to_msgpack(&params).unwrap_or_default();
+                            let output = plugin_host.call(plugin_name, "check_login", &params_bytes)?;
+                            match from_msgpack(&output) {
+                                Some(r) => r,
+                                None => {
+                                    // Fallback: try to parse as JSON for backwards compatibility
+                                    serde_json::from_str(&String::from_utf8_lossy(&output))
+                                        .unwrap_or(CheckLoginResponse {
+                                            status: "error".to_string(),
+                                            token: None,
+                                            base_url: None,
+                                            error: Some("failed to parse response".to_string()),
+                                        })
+                                }
+                            }
                         };
 
                         match check_resp.status.as_str() {
@@ -304,4 +349,14 @@ struct CheckLoginResponse {
     base_url: Option<String>,
     #[serde(default)]
     error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LoginParams {
+    config: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct QrStatusParams {
+    temp_token: String,
 }
