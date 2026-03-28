@@ -13,8 +13,8 @@ use std::collections::HashMap;
 
 use crate::constants::*;
 use crate::messages::{
-    build_media_message, build_media_upload, build_send_message, parse_get_config_response,
-    parse_messages, parse_qr_status, parse_send_response,
+    MediaParams, build_media_message, build_media_upload, build_send_message,
+    parse_get_config_response, parse_messages, parse_qr_status, parse_send_response,
 };
 use crate::session::{
     cache_context_token, cache_typing_ticket, get_route_tag, pop_context_token, set_route_tag,
@@ -131,10 +131,7 @@ fn api_post(
 /// Returns QR code URL for display, or token if already logged in
 #[plugin_fn]
 pub fn login(params: LoginParams) -> FnResult<LoginResponse> {
-    let config: WeixinConfig = match rmp_serde::from_slice(&params.config) {
-        Ok(c) => c,
-        Err(_) => WeixinConfig::default(),
-    };
+    let config: WeixinConfig = rmp_serde::from_slice(&params.config).unwrap_or_default();
 
     // Store route_tag for use in API calls
     set_route_tag(&config.route_tag);
@@ -265,10 +262,10 @@ pub fn poll(params: PollParams) -> FnResult<PollResponse> {
 
     // Cache context_token for each user when receiving messages (use sender_id as key)
     for msg in &result.messages {
-        if let Some(token) = msg.metadata.get("context_token") {
-            if !token.is_empty() {
-                cache_context_token(&msg.sender_id, token);
-            }
+        if let Some(token) = msg.metadata.get("context_token")
+            && !token.is_empty()
+        {
+            cache_context_token(&msg.sender_id, token);
         }
     }
 
@@ -437,11 +434,13 @@ pub fn send_media(params: SendMediaParams) -> FnResult<SendResponse> {
         &params.to_user_id,
         &params.content,
         &params.context_token,
-        med_type,
-        &params.download_param,
-        &params.aes_key,
-        &params.file_name,
-        params.file_size,
+        MediaParams {
+            media_type: med_type,
+            download_param: params.download_param,
+            aes_key_b64: params.aes_key,
+            file_name: params.file_name,
+            file_size: params.file_size,
+        },
     );
 
     let route_tag = get_route_tag();

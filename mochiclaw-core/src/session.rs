@@ -133,21 +133,21 @@ impl Session {
                         declared.insert(call.id.clone(), i);
                     }
                 }
-            } else if msg.role == "tool" {
-                if let Some(ref tid) = msg.tool_call_id {
-                    if !declared.contains_key(tid) {
-                        // Orphan tool result - start after this
-                        start = i + 1;
-                        declared.clear();
-                        // Re-declare from start to i
-                        for j in start..=i {
-                            if messages[j].role == "assistant" {
-                                if let Some(ref tc) = messages[j].tool_calls {
-                                    for call in tc {
-                                        declared.insert(call.id.clone(), j);
-                                    }
-                                }
-                            }
+            } else if msg.role == "tool"
+                && let Some(ref tid) = msg.tool_call_id
+                && !declared.contains_key(tid)
+            {
+                // Orphan tool result - start after this
+                start = i + 1;
+                declared.clear();
+                // Re-declare from start to i using iterator to avoid range loop warning
+                for (offset, msg) in messages[start..=i].iter().enumerate() {
+                    let j = start + offset;
+                    if msg.role == "assistant"
+                        && let Some(ref tc) = msg.tool_calls
+                    {
+                        for call in tc {
+                            declared.insert(call.id.clone(), j);
                         }
                     }
                 }
@@ -303,11 +303,11 @@ impl SessionManager {
             if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                 let key = stem.replace("_", ":");
                 // Load session if not already in cache
-                if !self.cache.contains_key(&key) {
-                    if let Some(session) = self.load(&key) {
-                        tracing::info!("loaded existing session: {}", key);
-                        self.cache.insert(key, session);
-                    }
+                if !self.cache.contains_key(&key)
+                    && let Some(session) = self.load(&key)
+                {
+                    tracing::info!("loaded existing session: {}", key);
+                    self.cache.insert(key, session);
                 }
             }
         }
@@ -368,10 +368,8 @@ impl SessionManager {
                         Ok(val) => {
                             if val.get("_type").and_then(|v| v.as_str()) == Some("metadata") {
                                 metadata = serde_json::from_value(val).ok();
-                            } else {
-                                if let Ok(msg) = serde_json::from_value::<Message>(val) {
-                                    messages.push(msg);
-                                }
+                            } else if let Ok(msg) = serde_json::from_value::<Message>(val) {
+                                messages.push(msg);
                             }
                         }
                         Err(e) => {
@@ -464,32 +462,31 @@ impl SessionManager {
             if let Ok(file) = fs::File::open(&path) {
                 let mut reader = BufReader::new(file);
                 let mut first_line = String::new();
-                if reader.read_line(&mut first_line).is_ok() {
-                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(first_line.trim()) {
-                        if val.get("_type").and_then(|v| v.as_str()) == Some("metadata") {
-                            let key = val
-                                .get("key")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string())
-                                .unwrap_or_else(|| {
-                                    path.file_stem()
-                                        .and_then(|s| s.to_str())
-                                        .unwrap_or("")
-                                        .replace("_", ":")
-                                });
+                if reader.read_line(&mut first_line).is_ok()
+                    && let Ok(val) = serde_json::from_str::<serde_json::Value>(first_line.trim())
+                    && val.get("_type").and_then(|v| v.as_str()) == Some("metadata")
+                {
+                    let key = val
+                        .get("key")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| {
+                            path.file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or("")
+                                .replace("_", ":")
+                        });
 
-                            sessions.push(SessionInfo {
-                                key,
-                                created_at: val
-                                    .get("created_at")
-                                    .and_then(|v| v.as_str().map(String::from)),
-                                updated_at: val
-                                    .get("updated_at")
-                                    .and_then(|v| v.as_str().map(String::from)),
-                                path: path.to_string_lossy().to_string(),
-                            });
-                        }
-                    }
+                    sessions.push(SessionInfo {
+                        key,
+                        created_at: val
+                            .get("created_at")
+                            .and_then(|v| v.as_str().map(String::from)),
+                        updated_at: val
+                            .get("updated_at")
+                            .and_then(|v| v.as_str().map(String::from)),
+                        path: path.to_string_lossy().to_string(),
+                    });
                 }
             }
         }

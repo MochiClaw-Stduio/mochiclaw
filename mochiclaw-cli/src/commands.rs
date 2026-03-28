@@ -1,7 +1,7 @@
 //! CLI commands
 
 use anyhow::Result;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::logging_utils::{cleanup_old_logs, resolve_log_dir};
@@ -15,10 +15,10 @@ pub async fn start(config: Config, config_path: PathBuf) -> Result<()> {
     tracing::info!("agent model: {}", config.agent.model);
 
     // Clean up old log files if max_age_days is configured
-    if let Some(max_age_days) = config.runtime.log.max_age_days {
-        if let Some(log_dir) = resolve_log_dir(config.runtime.log.dir.as_deref(), &config_path) {
-            cleanup_old_logs(&log_dir, max_age_days);
-        }
+    if let Some(max_age_days) = config.runtime.log.max_age_days
+        && let Some(log_dir) = resolve_log_dir(config.runtime.log.dir.as_deref(), &config_path)
+    {
+        cleanup_old_logs(&log_dir, max_age_days);
     }
 
     // Create plugin host with optional fallback proxy from HTTP_PROXY
@@ -81,12 +81,12 @@ pub async fn start(config: Config, config_path: PathBuf) -> Result<()> {
     let workspace = config.workspace_path(&config_path);
 
     // Release templates to workspace at startup
-    ContextBuilder::new(workspace.clone(), None).release_templates();
+    ContextBuilder::new(workspace.clone()).release_templates();
 
     let agent = AgentLoop::new(bus.clone(), plugin_host.clone(), &config, workspace);
 
     // Run agent
-    let agent_handle = tokio::spawn(async move {
+    let _agent_handle = tokio::spawn(async move {
         if let Err(e) = agent.run().await {
             tracing::error!("agent error: {}", e);
         }
@@ -110,7 +110,7 @@ pub async fn onboard(config_path: PathBuf) -> Result<()> {
 
     // Release templates to workspace
     let workspace = config.workspace_path(&config_path);
-    ContextBuilder::new(workspace, None).release_templates();
+    ContextBuilder::new(workspace).release_templates();
     println!("released templates to workspace");
 
     Ok(())
@@ -234,7 +234,7 @@ fn save_token_to_config(
     config: &mut Config,
     plugin_name: &str,
     resp: &LoginResponse,
-    config_path: &PathBuf,
+    config_path: &Path,
 ) -> Result<()> {
     if let Some(token) = &resp.token {
         let mut extra = std::collections::HashMap::new();

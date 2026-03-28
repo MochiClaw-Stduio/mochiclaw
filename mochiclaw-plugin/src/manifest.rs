@@ -90,31 +90,31 @@ impl Capabilities {
             .unwrap_or_else(|| self.fs.allowed_root.clone());
 
         let mut read_whitelist = self.fs.read_whitelist.clone();
-        if let Some(ref fs_override) = overrides.fs {
-            if let Some(ref user_list) = fs_override.read_whitelist {
-                read_whitelist.extend(user_list.iter().cloned());
-            }
+        if let Some(ref fs_override) = overrides.fs
+            && let Some(ref user_list) = fs_override.read_whitelist
+        {
+            read_whitelist.extend(user_list.iter().cloned());
         }
 
         let mut write_whitelist = self.fs.write_whitelist.clone();
-        if let Some(ref fs_override) = overrides.fs {
-            if let Some(ref user_list) = fs_override.write_whitelist {
-                write_whitelist.extend(user_list.iter().cloned());
-            }
+        if let Some(ref fs_override) = overrides.fs
+            && let Some(ref user_list) = fs_override.write_whitelist
+        {
+            write_whitelist.extend(user_list.iter().cloned());
         }
 
         let mut read_blacklist = self.fs.read_blacklist.clone();
-        if let Some(ref fs_override) = overrides.fs {
-            if let Some(ref user_list) = fs_override.read_blacklist {
-                read_blacklist.extend(user_list.iter().cloned());
-            }
+        if let Some(ref fs_override) = overrides.fs
+            && let Some(ref user_list) = fs_override.read_blacklist
+        {
+            read_blacklist.extend(user_list.iter().cloned());
         }
 
         let mut write_blacklist = self.fs.write_blacklist.clone();
-        if let Some(ref fs_override) = overrides.fs {
-            if let Some(ref user_list) = fs_override.write_blacklist {
-                write_blacklist.extend(user_list.iter().cloned());
-            }
+        if let Some(ref fs_override) = overrides.fs
+            && let Some(ref user_list) = fs_override.write_blacklist
+        {
+            write_blacklist.extend(user_list.iter().cloned());
         }
 
         // Merge allowed_kv_read

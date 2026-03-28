@@ -20,16 +20,12 @@ const MEMORY_TEMPLATE: &str = include_str!("../templates/MEMORY.md");
 /// Context builder for agent prompts
 pub struct ContextBuilder {
     workspace: PathBuf,
-    timezone: Option<String>,
 }
 
 impl ContextBuilder {
     /// Create a new ContextBuilder with the given workspace path
-    pub fn new(workspace: PathBuf, timezone: Option<String>) -> Self {
-        Self {
-            workspace,
-            timezone,
-        }
+    pub fn new(workspace: PathBuf) -> Self {
+        Self { workspace }
     }
 
     /// Release all template files to the workspace.
@@ -155,7 +151,6 @@ impl ContextBuilder {
         &self,
         history: &[crate::session::Message],
         current_message: &str,
-        _skill_names: Option<&[String]>,
         media: Option<&[String]>,
         channel: Option<&str>,
         chat_id: Option<&str>,
@@ -356,12 +351,11 @@ impl ContextBuilder {
                         false
                     };
 
-                    if is_always_on {
-                        if let Ok(content) = std::fs::read_to_string(&skill_md) {
-                            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                                content_parts.push(format!("## Skill: {}\n\n{}", name, content));
-                            }
-                        }
+                    if is_always_on
+                        && let Ok(content) = std::fs::read_to_string(&skill_md)
+                        && let Some(name) = path.file_name().and_then(|n| n.to_str())
+                    {
+                        content_parts.push(format!("## Skill: {}\n\n{}", name, content));
                     }
                 }
             }
@@ -528,7 +522,7 @@ mod tests {
     #[test]
     fn test_identity_section() {
         let dir = create_test_workspace();
-        let ctx = ContextBuilder::new(dir.path().to_path_buf(), None);
+        let ctx = ContextBuilder::new(dir.path().to_path_buf());
         let identity = ctx._identity_section();
 
         assert!(identity.contains("mochiclaw"));
@@ -541,7 +535,7 @@ mod tests {
         let dir = create_test_workspace();
         std::fs::write(dir.path().join("AGENTS.md"), "Agent instructions").unwrap();
 
-        let ctx = ContextBuilder::new(dir.path().to_path_buf(), None);
+        let ctx = ContextBuilder::new(dir.path().to_path_buf());
         let bootstrap = ctx._load_bootstrap_files().unwrap();
 
         assert!(bootstrap.contains("## AGENTS.md"));
@@ -557,7 +551,7 @@ mod tests {
         )
         .unwrap();
 
-        let ctx = ContextBuilder::new(dir.path().to_path_buf(), None);
+        let ctx = ContextBuilder::new(dir.path().to_path_buf());
         let memory = ctx._memory_context().unwrap();
 
         assert_eq!(memory, "Important facts");
@@ -566,7 +560,7 @@ mod tests {
     #[test]
     fn test_build_system_prompt() {
         let dir = create_test_workspace();
-        let ctx = ContextBuilder::new(dir.path().to_path_buf(), None);
+        let ctx = ContextBuilder::new(dir.path().to_path_buf());
         let prompt = ctx.build_system_prompt();
 
         assert!(prompt.contains("mochiclaw"));
@@ -576,12 +570,11 @@ mod tests {
     #[test]
     fn test_build_messages() {
         let dir = create_test_workspace();
-        let ctx = ContextBuilder::new(dir.path().to_path_buf(), None);
+        let ctx = ContextBuilder::new(dir.path().to_path_buf());
 
         let messages = ctx.build_messages(
             &[],
             "Hello",
-            None,
             None,
             Some("test_channel"),
             Some("chat_123"),

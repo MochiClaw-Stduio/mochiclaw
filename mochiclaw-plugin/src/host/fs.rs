@@ -181,7 +181,7 @@ impl FsContext {
                     .map_err(|e| format!("Failed to resolve parent directory: {}", e))?;
                 let filename = joined
                     .file_name()
-                    .ok_or_else(|| format!("Invalid path: no filename"))?;
+                    .ok_or_else(|| "Invalid path: no filename".to_string())?;
                 canonicalized_parent.join(filename)
             } else {
                 // Parent doesn't exist either - we'll create it later in fs_write
@@ -491,12 +491,12 @@ pub fn fs_write_fn(ctx: FsContext) -> Function {
             }
 
             // Create parent directories if needed
-            if let Some(parent) = resolved.parent() {
-                if let Err(e) = std::fs::create_dir_all(parent) {
-                    tracing::error!("fs_write failed to create parent dir: {}", e);
-                    outputs[0] = Val::I32(1);
-                    return Ok(());
-                }
+            if let Some(parent) = resolved.parent()
+                && let Err(e) = std::fs::create_dir_all(parent)
+            {
+                tracing::error!("fs_write failed to create parent dir: {}", e);
+                outputs[0] = Val::I32(1);
+                return Ok(());
             }
 
             // Write file: 0 = success, 1 = failure
@@ -880,7 +880,7 @@ fn edit_file_impl(path: &Path, old_text: &str, new_text: &str, replace_all: bool
     } else {
         let idx = match content.find(&matched) {
             Some(i) => i,
-            None => return format!("Error: matched text not found"),
+            None => return "Error: matched text not found".to_string(),
         };
         let mut c = content.clone();
         c.replace_range(idx..idx + matched.len(), &new_normalized);
@@ -1035,7 +1035,7 @@ fn list_dir_impl(path: &Path, recursive: bool, max_entries: u64) -> String {
             Err(e) => return format!("Error reading directory: {}", e),
         };
 
-        entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+        entries.sort_by_key(|a| a.file_name());
 
         for entry in entries {
             let name = entry.file_name().to_string_lossy().to_string();
@@ -1260,7 +1260,7 @@ mod tests {
         // Create a symlink that points WITHIN the allowed_root
         let link_inside = root.join("link_inside");
         #[cfg(unix)]
-        std::os::unix::fs::symlink(&root.join("src"), &link_inside).unwrap();
+        std::os::unix::fs::symlink(root.join("src"), &link_inside).unwrap();
 
         let ctx = FsContext::new(root.clone(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
 

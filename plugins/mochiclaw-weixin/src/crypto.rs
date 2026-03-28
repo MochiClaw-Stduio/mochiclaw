@@ -17,7 +17,7 @@ pub fn encrypt_aes_ecb(data: &[u8], key: &[u8; 16]) -> Vec<u8> {
     // PKCS7 padding
     let pad_len = 16 - data.len() % 16;
     let mut padded = data.to_vec();
-    padded.extend(std::iter::repeat(pad_len as u8).take(pad_len));
+    padded.extend(std::iter::repeat_n(pad_len as u8, pad_len));
 
     let mut result = Vec::new();
     for chunk in padded.chunks(16) {

@@ -54,23 +54,23 @@ pub fn parse_messages(raw_json: &str) -> PollResult {
     };
 
     // Check for errors
-    if let Some(ret) = api_resp.ret {
-        if ret != 0 {
-            return PollResult {
-                messages: vec![],
-                get_updates_buf: api_resp.get_updates_buf,
-                error: Some(format!("API error: ret={}", ret)),
-            };
-        }
+    if let Some(ret) = api_resp.ret
+        && ret != 0
+    {
+        return PollResult {
+            messages: vec![],
+            get_updates_buf: api_resp.get_updates_buf,
+            error: Some(format!("API error: ret={}", ret)),
+        };
     }
-    if let Some(errcode) = api_resp.errcode {
-        if errcode != 0 {
-            return PollResult {
-                messages: vec![],
-                get_updates_buf: api_resp.get_updates_buf,
-                error: Some(format!("API error: errcode={}", errcode)),
-            };
-        }
+    if let Some(errcode) = api_resp.errcode
+        && errcode != 0
+    {
+        return PollResult {
+            messages: vec![],
+            get_updates_buf: api_resp.get_updates_buf,
+            error: Some(format!("API error: errcode={}", errcode)),
+        };
     }
 
     let mut messages = Vec::new();
@@ -206,15 +206,15 @@ pub fn parse_qr_status(raw_json: &str) -> QrStatusResult {
 pub fn parse_send_response(raw_json: &str) -> Result<(), String> {
     let resp: WeixinApiResponse = serde_json::from_str(raw_json).map_err(|e| e.to_string())?;
 
-    if let Some(errcode) = resp.errcode {
-        if errcode != 0 {
-            return Err(format!("send failed: errcode={}", errcode));
-        }
+    if let Some(errcode) = resp.errcode
+        && errcode != 0
+    {
+        return Err(format!("send failed: errcode={}", errcode));
     }
-    if let Some(ret) = resp.ret {
-        if ret != 0 {
-            return Err(format!("send failed: ret={}", ret));
-        }
+    if let Some(ret) = resp.ret
+        && ret != 0
+    {
+        return Err(format!("send failed: ret={}", ret));
     }
     Ok(())
 }
@@ -232,13 +232,13 @@ pub fn parse_get_config_response(raw_json: &str) -> Result<String, String> {
 
     let resp: GetConfigResp = serde_json::from_str(raw_json).map_err(|e| e.to_string())?;
 
-    if let Some(ret) = resp.ret {
-        if ret != 0 {
-            return Err(format!(
-                "getConfig failed: ret={}, errmsg={}",
-                ret, resp.errmsg
-            ));
-        }
+    if let Some(ret) = resp.ret
+        && ret != 0
+    {
+        return Err(format!(
+            "getConfig failed: ret={}, errmsg={}",
+            ret, resp.errmsg
+        ));
     }
 
     if resp.typing_ticket.is_empty() {
@@ -300,11 +300,11 @@ pub fn build_media_upload(
     let mut aes_key = [0u8; 16];
     rand_bytes(&mut aes_key);
     let aes_key_hex = hex::encode(aes_key);
-    let aes_key_b64 = BASE64.encode(&aes_key);
+    let aes_key_b64 = BASE64.encode(aes_key);
 
     // Calculate sizes
     let raw_size = file_data.len();
-    let padded_size = ((raw_size + 1 + 15) / 16) * 16;
+    let padded_size = (raw_size + 1).div_ceil(16) * 16;
 
     // Encrypt the file
     let encrypted = encrypt_aes_ecb(file_data, &aes_key);
@@ -333,20 +333,25 @@ pub fn build_media_upload(
     ))
 }
 
+/// Parameters for building a media message
+pub struct MediaParams {
+    pub media_type: i32,
+    pub download_param: String,
+    pub aes_key_b64: String,
+    pub file_name: String,
+    pub file_size: usize,
+}
+
 /// Build a media message request body
 pub fn build_media_message(
     to_user_id: &str,
     content: &str,
     context_token: &str,
-    media_type: i32,
-    download_param: &str,
-    aes_key_b64: &str,
-    file_name: &str,
-    file_size: usize,
+    media: MediaParams,
 ) -> serde_json::Value {
     let client_id = format!("mochiclaw-{:x}", rand_u32());
 
-    let (item_type, item_key) = match media_type {
+    let (item_type, item_key) = match media.media_type {
         UPLOAD_MEDIA_IMAGE => (ITEM_IMAGE, "image_item"),
         UPLOAD_MEDIA_VIDEO => (ITEM_VIDEO, "video_item"),
         _ => (ITEM_FILE, "file_item"),
@@ -354,19 +359,19 @@ pub fn build_media_message(
 
     let mut media_item = serde_json::json!({
         "media": {
-            "encrypt_query_param": download_param,
-            "aes_key": BASE64.encode(aes_key_b64.as_bytes()),
+            "encrypt_query_param": media.download_param,
+            "aes_key": BASE64.encode(media.aes_key_b64.as_bytes()),
             "encrypt_type": 1,
         }
     });
 
     if item_type == ITEM_IMAGE {
-        media_item["mid_size"] = serde_json::json!(file_size);
+        media_item["mid_size"] = serde_json::json!(media.file_size);
     } else if item_type == ITEM_VIDEO {
-        media_item["video_size"] = serde_json::json!(file_size);
+        media_item["video_size"] = serde_json::json!(media.file_size);
     } else if item_type == ITEM_FILE {
-        media_item["file_name"] = serde_json::json!(file_name);
-        media_item["len"] = serde_json::json!(format!("{}", file_size));
+        media_item["file_name"] = serde_json::json!(media.file_name);
+        media_item["len"] = serde_json::json!(format!("{}", media.file_size));
     }
 
     let mut msg = serde_json::json!({

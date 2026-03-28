@@ -170,12 +170,8 @@ pub fn kv_set<T: Serialize>(key: &str, value: &T) -> bool {
         None => return false,
     };
 
-    match unsafe { host_kv_set(input_bytes) } {
-        Ok(0) => true,
-        _ => false,
-    }
+    matches!(unsafe { host_kv_set(input_bytes) }, Ok(0))
 }
-
 /// Set a raw bytes value in KV store (no serialization)
 ///
 /// # Arguments
@@ -196,12 +192,8 @@ pub fn kv_set_raw(key: &str, value: Vec<u8>) -> bool {
         None => return false,
     };
 
-    match unsafe { host_kv_set(input_bytes) } {
-        Ok(0) => true,
-        _ => false,
-    }
+    matches!(unsafe { host_kv_set(input_bytes) }, Ok(0))
 }
-
 /// Get a raw bytes value from KV store (no deserialization)
 ///
 /// This reads from the calling plugin's own KV store.
@@ -253,10 +245,7 @@ pub fn kv_remove(key: &str) -> bool {
         None => return false,
     };
 
-    match unsafe { host_kv_remove(input_bytes) } {
-        Ok(0) => true,
-        _ => false,
-    }
+    matches!(unsafe { host_kv_remove(input_bytes) }, Ok(0))
 }
 
 /// List plugins this plugin can read from (including self).

@@ -1,6 +1,6 @@
 //! Log file utilities
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use time::OffsetDateTime;
 
 /// Clean up log files older than max_age_days
@@ -46,7 +46,7 @@ pub fn cleanup_old_logs(log_dir: &PathBuf, max_age_days: u32) {
 }
 
 /// Resolve log directory relative to config file location
-pub fn resolve_log_dir(log_dir: Option<&str>, config_path: &PathBuf) -> Option<PathBuf> {
+pub fn resolve_log_dir(log_dir: Option<&str>, config_path: &Path) -> Option<PathBuf> {
     log_dir.map(|dir| {
         let path = PathBuf::from(dir);
         if path.is_absolute() {

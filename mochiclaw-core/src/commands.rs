@@ -33,15 +33,12 @@ impl CommandInfo {
     }
 }
 
+/// Command function type: (channel, chat_id, args) -> optional response
+type CommandFn = Arc<dyn Fn(&str, &str, &str) -> Option<String> + Send + Sync>;
+
 /// Command registry for built-in commands
 pub struct CommandRegistry {
-    commands: HashMap<
-        String,
-        (
-            Arc<dyn Fn(&str, &str, &str) -> Option<String> + Send + Sync>,
-            CommandInfo,
-        ),
-    >,
+    commands: HashMap<String, (CommandFn, CommandInfo)>,
 }
 
 impl Default for CommandRegistry {

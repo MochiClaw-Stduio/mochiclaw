@@ -96,7 +96,7 @@ impl AgentLoop {
             poll_state: tokio::sync::Mutex::new(HashMap::new()),
             sessions: Mutex::new(SessionManager::new(sessions_dir)),
             commands: CommandRegistry::new(),
-            context_builder: ContextBuilder::new(workspace, None),
+            context_builder: ContextBuilder::new(workspace),
             tool_definitions: Mutex::new(Vec::new()),
             tool_plugin_map: Mutex::new(HashMap::new()),
         }
@@ -328,15 +328,14 @@ impl AgentLoop {
                 }
                 _ => {
                     // Try built-in commands from registry
-                    if let Some((name, args)) = parse_command(&msg.content) {
-                        if let Some(text) =
+                    if let Some((name, args)) = parse_command(&msg.content)
+                        && let Some(text) =
                             self.commands
                                 .execute(&msg.channel, &msg.chat_id, &name, &args)
-                        {
-                            self.send_to_channel(&msg.channel, &msg.chat_id, &text)
-                                .await?;
-                            return Ok(());
-                        }
+                    {
+                        self.send_to_channel(&msg.channel, &msg.chat_id, &text)
+                            .await?;
+                        return Ok(());
                     }
                     // Not a known command - fall through to normal processing (send to LLM)
                 }
@@ -365,7 +364,6 @@ impl AgentLoop {
         let context_messages = self.context_builder.build_messages(
             &history,
             &msg.content,
-            None,
             media_ref,
             Some(&msg.channel),
             Some(&msg.chat_id),
@@ -393,10 +391,8 @@ impl AgentLoop {
         }
 
         // Main agent loop - handle tool calls iteratively
-        let mut final_response = String::new();
         let mut iterations = 0;
-
-        loop {
+        let final_response = loop {
             iterations += 1;
             if iterations > self.max_iterations {
                 tracing::warn!(
@@ -404,8 +400,7 @@ impl AgentLoop {
                     self.max_iterations,
                     msg.channel
                 );
-                final_response = "I apologize, but I reached the maximum number of iterations. Please try again with a simpler request.".to_string();
-                break;
+                break "I apologize, but I reached the maximum number of iterations. Please try again with a simpler request.".to_string();
             }
 
             // Build chat request for provider with current messages and tools
@@ -433,8 +428,7 @@ impl AgentLoop {
             // Check if there are tool calls to execute
             if response.tool_calls.is_empty() {
                 // No tool calls, this is the final response
-                final_response = response.content;
-                break;
+                break response.content;
             }
 
             tracing::info!(
@@ -503,7 +497,7 @@ impl AgentLoop {
 
                 tracing::debug!("tool '{}' executed successfully", tool_name);
             }
-        }
+        };
 
         // Add assistant response to session
         {

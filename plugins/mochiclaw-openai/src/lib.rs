@@ -249,18 +249,17 @@ pub fn chat_stream(request: ChatRequest) -> FnResult<Vec<u8>> {
     let mut chunks: Vec<ChatChunk> = Vec::new();
 
     for line in lines {
-        if line.starts_with("data: ") {
-            let data = &line[6..];
+        if let Some(data) = line.strip_prefix("data: ") {
             if data == "[DONE]" {
                 continue;
             }
-            if let Ok(delta) = serde_json::from_str::<serde_json::Value>(data) {
-                if let Some(content) = delta["choices"][0]["delta"]["content"].as_str() {
-                    chunks.push(ChatChunk {
-                        delta: content.to_string(),
-                        done: false,
-                    });
-                }
+            if let Ok(delta) = serde_json::from_str::<serde_json::Value>(data)
+                && let Some(content) = delta["choices"][0]["delta"]["content"].as_str()
+            {
+                chunks.push(ChatChunk {
+                    delta: content.to_string(),
+                    done: false,
+                });
             }
         }
     }

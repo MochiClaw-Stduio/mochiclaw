@@ -9,10 +9,13 @@ use std::collections::HashMap;
 use std::io::Cursor;
 use std::sync::Arc;
 
+type KvStore = HashMap<String, Vec<u8>>;
+type PluginKvStore = HashMap<String, KvStore>;
+
 /// Shared KV store for all plugin instances
 /// Key structure: plugin_name -> key -> msgpack encoded value
 pub struct PluginKV {
-    store: Arc<std::sync::Mutex<HashMap<String, HashMap<String, Vec<u8>>>>>,
+    store: Arc<std::sync::Mutex<PluginKvStore>>,
 }
 
 impl Clone for PluginKV {
@@ -258,7 +261,7 @@ pub fn kv_get_fn(ctx: PluginKVContext) -> Function {
                 return Ok(());
             }
 
-            if let Err(_) = plugin.memory_set_val(&mut outputs[0], &output_buf) {
+            if plugin.memory_set_val(&mut outputs[0], &output_buf).is_err() {
                 outputs[0] = Val::I64(0);
             }
             Ok(())
@@ -462,7 +465,10 @@ pub fn kv_list_readable_fn(ctx: PluginKVContext) -> Function {
                 return Ok(());
             }
 
-            if let Err(_) = _plugin.memory_set_val(&mut outputs[0], &output_buf) {
+            if _plugin
+                .memory_set_val(&mut outputs[0], &output_buf)
+                .is_err()
+            {
                 outputs[0] = Val::I64(0);
             }
             Ok(())
@@ -513,7 +519,10 @@ pub fn kv_list_writable_fn(ctx: PluginKVContext) -> Function {
                 return Ok(());
             }
 
-            if let Err(_) = _plugin.memory_set_val(&mut outputs[0], &output_buf) {
+            if _plugin
+                .memory_set_val(&mut outputs[0], &output_buf)
+                .is_err()
+            {
                 outputs[0] = Val::I64(0);
             }
             Ok(())
