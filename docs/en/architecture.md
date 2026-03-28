@@ -13,20 +13,20 @@ Mochiclaw is a plugin-based AI Agent runtime. The architecture consists of four 
 │              mochiclaw-cli              │  Entry Point
 ├─────────────────────────────────────────┤
 │             mochiclaw-core              │  Agent Orchestration
-│  ┌──────────┐ ┌──────────┐ ┌─────────┐ │
-│  │AgentLoop │ │MessageBus│ │Session  │ │
-│  └──────────┘ └──────────┘ └─────────┘ │
+│  ┌──────────┐ ┌──────────┐ ┌─────────┐  │
+│  │AgentLoop │ │MessageBus│ │Session  │  │
+│  └──────────┘ └──────────┘ └─────────┘  │
 ├─────────────────────────────────────────┤
 │            mochiclaw-plugin             │  Plugin Host (Extism)
-│  ┌──────────────────────────────────┐  │
-│  │  PluginHost  │  Pool  │ Host Fn │  │
-│  └──────────────────────────────────┘  │
+│  ┌──────────────────────────────────┐   │
+│  │  PluginHost  │  Pool  │ Host Fn  │   │
+│  └──────────────────────────────────┘   │
 ├─────────────────────────────────────────┤
 │              plugins/                   │  WASM Plugins
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐  │
-│  │ OpenAI  │ │   FS    │ │ WeChat  │  │
-│  │Provider │ │  Tool   │ │ Channel │  │
-│  └─────────┘ └─────────┘ └─────────┘  │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐    │
+│  │ OpenAI  │ │   FS    │ │ WeChat  │    │
+│  │Provider │ │  Tool   │ │ Channel │    │
+│  └─────────┘ └─────────┘ └─────────┘    │
 └─────────────────────────────────────────┘
 ```
 
