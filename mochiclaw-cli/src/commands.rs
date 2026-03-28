@@ -3,16 +3,76 @@
 use anyhow::Result;
 use std::path::PathBuf;
 use std::sync::Arc;
+use time::OffsetDateTime;
 
 use mochiclaw_config::{ChannelConfig, Config};
 use mochiclaw_core::{AgentLoop, ContextBuilder, MessageBus, PluginHost, PluginManifest, discover};
 use mochiclaw_sdk::channel::{LoginParams, LoginResponse, QrStatusParams, QrStatusResponse};
 
-pub async fn start(config_path: PathBuf) -> Result<()> {
-    let config = Config::from_file(&config_path)?;
+/// Clean up log files older than max_age_days
+fn cleanup_old_logs(log_dir: &PathBuf, max_age_days: u32) {
+    let log_path = if log_dir.is_absolute() {
+        log_dir.clone()
+    } else {
+        // Relative to current dir
+        std::env::current_dir().unwrap_or_default().join(log_dir)
+    };
 
+    if !log_path.exists() {
+        return;
+    }
+
+    let cutoff = OffsetDateTime::now_utc() - time::Duration::days(max_age_days as i64);
+    let prefix = "mochiclaw.log";
+    let date_format = time::format_description::parse("[year]-[month]-[day]").unwrap();
+
+    if let Ok(entries) = std::fs::read_dir(&log_path) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let file_name = match path.file_name().and_then(|n| n.to_str()) {
+                Some(n) => n,
+                None => continue,
+            };
+
+            // Match files like mochiclaw.log.2026-03-28
+            if let Some(date_str) = file_name.strip_prefix(prefix) {
+                let date_str = date_str.trim_start_matches('.');
+                // Parse date from filename (format: YYYY-MM-DD or YYYY-MM-DD_HH-MM-SS)
+                let date_part = date_str.split('_').next().unwrap_or(date_str);
+                if let Ok(parsed_date) = time::Date::parse(date_part, &date_format) {
+                    let offset_date = parsed_date.with_hms(0, 0, 0).unwrap().assume_utc();
+                    if offset_date < cutoff {
+                        tracing::info!("removing old log file: {}", path.display());
+                        let _ = std::fs::remove_file(&path);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Resolve log directory relative to config file location
+fn resolve_log_dir(log_dir: Option<&str>, config_path: &PathBuf) -> Option<PathBuf> {
+    log_dir.map(|dir| {
+        let path = PathBuf::from(dir);
+        if path.is_absolute() {
+            path
+        } else {
+            config_path.parent().unwrap_or(&PathBuf::from(".")).join(path)
+        }
+    })
+}
+
+pub async fn start(config: Config, config_path: PathBuf) -> Result<()> {
     tracing::info!("loaded config from {}", config_path.display());
     tracing::info!("agent model: {}", config.agent.model);
+
+    // Clean up old log files if max_age_days is configured
+    if let Some(max_age_days) = config.runtime.log.max_age_days {
+        if let Some(log_dir) = resolve_log_dir(config.runtime.log.dir.as_deref(), &config_path) {
+            cleanup_old_logs(&log_dir, max_age_days);
+        }
+    }
 
     // Create plugin host with optional fallback proxy from HTTP_PROXY
     let fallback_proxy = if config.runtime.network.use_system_proxy {
@@ -100,13 +160,7 @@ pub async fn onboard(config_path: PathBuf) -> Result<()> {
 }
 
 /// Login to a channel plugin
-pub async fn login(plugin_name: &str, config_path: PathBuf) -> Result<()> {
-    // Load config, create default if not exists
-    let mut config = if config_path.exists() {
-        Config::from_file(&config_path)?
-    } else {
-        create_default_config()?
-    };
+pub async fn login(plugin_name: &str, mut config: Config, config_path: PathBuf) -> Result<()> {
 
     // Find plugin paths
     let wasm_name = plugin_name.replace("mochiclaw-", "mochiclaw_");
@@ -244,8 +298,4 @@ fn save_token_to_config(
         println!("token saved to config");
     }
     Ok(())
-}
-
-fn create_default_config() -> Result<Config> {
-    Ok(Config::default_for_onboarding())
 }
