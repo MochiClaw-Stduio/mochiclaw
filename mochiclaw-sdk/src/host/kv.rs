@@ -10,23 +10,19 @@ use std::io::Cursor;
 /// KV input structures (MessagePack encoded)
 #[derive(Serialize, Deserialize)]
 struct KVGetInput {
-    plugin: String,
-    user: String,
+    /// Target plugin to read from (optional, defaults to own plugin if None/empty)
+    plugin: Option<String>,
     key: String,
 }
 
 #[derive(Serialize, Deserialize)]
 struct KVSetInput {
-    plugin: String,
-    user: String,
     key: String,
     value: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize)]
 struct KVRemoveInput {
-    plugin: String,
-    user: String,
     key: String,
 }
 
@@ -50,6 +46,16 @@ extern "ExtismHost" {
     /// Input: MessagePack encoded KVRemoveInput
     /// Output: i64 (0 = success, -1 = not found)
     fn host_kv_remove(input: Vec<u8>) -> i64;
+
+    /// List plugins this plugin can read from
+    ///
+    /// Output: MessagePack encoded Vec<String>
+    fn host_kv_list_readable() -> Vec<u8>;
+
+    /// List plugins this plugin can write to
+    ///
+    /// Output: MessagePack encoded Vec<String>
+    fn host_kv_list_writable() -> Vec<u8>;
 }
 
 /// Serialize a value to a byte vector using MessagePack
@@ -66,18 +72,54 @@ fn from_msgpack<'a, T: Deserialize<'a>>(buf: &'a [u8]) -> Option<T> {
 
 /// Get a value from KV store and deserialize it
 ///
+/// This reads from the calling plugin's own KV store.
+///
 /// # Arguments
-/// * `plugin` - plugin name
-/// * `user` - user identifier
 /// * `key` - key to get
 ///
 /// # Returns
 /// * `Some(T)` on success
 /// * `None` if key not found or deserialization failed
-pub fn kv_get<T: for<'de> Deserialize<'de>>(plugin: &str, user: &str, key: &str) -> Option<T> {
+pub fn kv_get<T: for<'de> Deserialize<'de>>(key: &str) -> Option<T> {
     let input = KVGetInput {
-        plugin: plugin.to_string(),
-        user: user.to_string(),
+        plugin: None,
+        key: key.to_string(),
+    };
+
+    let input_bytes = to_msgpack(&input)?;
+
+    let output_bytes = match unsafe { host_kv_get(input_bytes) } {
+        Ok(b) => b,
+        Err(_) => return None,
+    };
+
+    if output_bytes.is_empty() {
+        return None;
+    }
+
+    // Deserialize Option<Vec<u8>>
+    let value: Option<Vec<u8>> = from_msgpack(&output_bytes)?;
+
+    match value {
+        Some(bytes) => from_msgpack(&bytes),
+        None => None,
+    }
+}
+
+/// Get a value from another plugin's KV store and deserialize it
+///
+/// Requires the calling plugin to have permission (declared in allowed_kv_read).
+///
+/// # Arguments
+/// * `plugin` - plugin name to read from
+/// * `key` - key to get
+///
+/// # Returns
+/// * `Some(T)` on success
+/// * `None` if key not found, not allowed, or deserialization failed
+pub fn kv_get_from<T: for<'de> Deserialize<'de>>(plugin: &str, key: &str) -> Option<T> {
+    let input = KVGetInput {
+        plugin: Some(plugin.to_string()),
         key: key.to_string(),
     };
 
@@ -103,24 +145,22 @@ pub fn kv_get<T: for<'de> Deserialize<'de>>(plugin: &str, user: &str, key: &str)
 
 /// Set a value in KV store (serializes to MessagePack first)
 ///
+/// This writes to the calling plugin's own KV store.
+///
 /// # Arguments
-/// * `plugin` - plugin name
-/// * `user` - user identifier
 /// * `key` - key to set
 /// * `value` - value to store (will be MessagePack serialized)
 ///
 /// # Returns
 /// * `true` on success
 /// * `false` on failure
-pub fn kv_set<T: Serialize>(plugin: &str, user: &str, key: &str, value: &T) -> bool {
+pub fn kv_set<T: Serialize>(key: &str, value: &T) -> bool {
     let value_bytes = match to_msgpack(value) {
         Some(b) => b,
         None => return false,
     };
 
     let input = KVSetInput {
-        plugin: plugin.to_string(),
-        user: user.to_string(),
         key: key.to_string(),
         value: value_bytes,
     };
@@ -139,18 +179,14 @@ pub fn kv_set<T: Serialize>(plugin: &str, user: &str, key: &str, value: &T) -> b
 /// Set a raw bytes value in KV store (no serialization)
 ///
 /// # Arguments
-/// * `plugin` - plugin name
-/// * `user` - user identifier
 /// * `key` - key to set
 /// * `value` - raw bytes to store
 ///
 /// # Returns
 /// * `true` on success
 /// * `false` on failure
-pub fn kv_set_raw(plugin: &str, user: &str, key: &str, value: Vec<u8>) -> bool {
+pub fn kv_set_raw(key: &str, value: Vec<u8>) -> bool {
     let input = KVSetInput {
-        plugin: plugin.to_string(),
-        user: user.to_string(),
         key: key.to_string(),
         value,
     };
@@ -168,18 +204,17 @@ pub fn kv_set_raw(plugin: &str, user: &str, key: &str, value: Vec<u8>) -> bool {
 
 /// Get a raw bytes value from KV store (no deserialization)
 ///
+/// This reads from the calling plugin's own KV store.
+///
 /// # Arguments
-/// * `plugin` - plugin name
-/// * `user` - user identifier
 /// * `key` - key to get
 ///
 /// # Returns
 /// * `Some(Vec<u8>)` on success
 /// * `None` if key not found
-pub fn kv_get_raw(plugin: &str, user: &str, key: &str) -> Option<Vec<u8>> {
+pub fn kv_get_raw(key: &str) -> Option<Vec<u8>> {
     let input = KVGetInput {
-        plugin: plugin.to_string(),
-        user: user.to_string(),
+        plugin: None,
         key: key.to_string(),
     };
 
@@ -200,18 +235,16 @@ pub fn kv_get_raw(plugin: &str, user: &str, key: &str) -> Option<Vec<u8>> {
 
 /// Remove a value from KV store
 ///
+/// This removes from the calling plugin's own KV store.
+///
 /// # Arguments
-/// * `plugin` - plugin name
-/// * `user` - user identifier
 /// * `key` - key to remove
 ///
 /// # Returns
 /// * `true` on success (key was present)
 /// * `false` on failure
-pub fn kv_remove(plugin: &str, user: &str, key: &str) -> bool {
+pub fn kv_remove(key: &str) -> bool {
     let input = KVRemoveInput {
-        plugin: plugin.to_string(),
-        user: user.to_string(),
         key: key.to_string(),
     };
 
@@ -224,4 +257,40 @@ pub fn kv_remove(plugin: &str, user: &str, key: &str) -> bool {
         Ok(0) => true,
         _ => false,
     }
+}
+
+/// List plugins this plugin can read from (including self).
+///
+/// # Returns
+/// * `Some(Vec<String>)` on success
+/// * `None` on failure
+pub fn kv_list_readable() -> Option<Vec<String>> {
+    let output_bytes = match unsafe { host_kv_list_readable() } {
+        Ok(b) => b,
+        Err(_) => return None,
+    };
+
+    if output_bytes.is_empty() {
+        return None;
+    }
+
+    from_msgpack(&output_bytes)
+}
+
+/// List plugins this plugin can write to (currently just self).
+///
+/// # Returns
+/// * `Some(Vec<String>)` on success
+/// * `None` on failure
+pub fn kv_list_writable() -> Option<Vec<String>> {
+    let output_bytes = match unsafe { host_kv_list_writable() } {
+        Ok(b) => b,
+        Err(_) => return None,
+    };
+
+    if output_bytes.is_empty() {
+        return None;
+    }
+
+    from_msgpack(&output_bytes)
 }

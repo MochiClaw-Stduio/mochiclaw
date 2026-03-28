@@ -9,9 +9,14 @@ use extism_pdk::*;
 use std::collections::HashMap;
 
 use crate::constants::*;
-use crate::session::{cache_context_token, cache_typing_ticket, get_route_tag, pop_context_token, set_route_tag};
+use crate::messages::{
+    build_media_message, build_media_upload, build_send_message, parse_get_config_response,
+    parse_messages, parse_qr_status, parse_send_response,
+};
+use crate::session::{
+    cache_context_token, cache_typing_ticket, get_route_tag, pop_context_token, set_route_tag,
+};
 use crate::types::*;
-use crate::messages::{build_media_message, build_media_upload, build_send_message, parse_get_config_response, parse_messages, parse_qr_status, parse_send_response};
 
 // ============================================================================
 // HTTP Helpers
@@ -24,11 +29,7 @@ fn make_http_request(req: HttpRequest, body: Option<&str>) -> Result<HttpRespons
     }
 }
 
-pub fn make_headers(token: &str) -> HashMap<String, String> {
-    make_headers_with_route_tag(token, "")
-}
-
-pub fn make_headers_with_route_tag(token: &str, route_tag: &str) -> HashMap<String, String> {
+pub fn make_headers(token: &str, route_tag: &str) -> HashMap<String, String> {
     use base64::engine::general_purpose::STANDARD as BASE64;
     use mochiclaw_sdk::host::rand_u32;
 
@@ -74,7 +75,7 @@ fn api_get_with_route_tag(
         }
     }
 
-    let mut headers = make_headers_with_route_tag(token, route_tag);
+    let mut headers = make_headers(token, route_tag);
     headers.insert("Content-Type".to_string(), "application/json".to_string());
 
     let mut req = HttpRequest::new(&url).with_method("GET");
@@ -93,11 +94,7 @@ fn api_get_with_route_tag(
     Ok(String::from_utf8_lossy(&resp.body()).to_string())
 }
 
-fn api_post(endpoint: &str, token: &str, body: serde_json::Value) -> Result<String, String> {
-    api_post_with_route_tag(endpoint, token, body, "")
-}
-
-fn api_post_with_route_tag(
+fn api_post(
     endpoint: &str,
     token: &str,
     body: serde_json::Value,
@@ -105,7 +102,7 @@ fn api_post_with_route_tag(
 ) -> Result<String, String> {
     let url = format!("https://ilinkai.weixin.qq.com/{}", endpoint);
 
-    let headers = make_headers_with_route_tag(token, route_tag);
+    let headers = make_headers(token, route_tag);
 
     let mut req = HttpRequest::new(&url).with_method("POST");
     req = req.with_header("Content-Type", "application/json");
@@ -304,18 +301,17 @@ pub fn poll(params_json: String) -> FnResult<String> {
         "timeout_ms": 35000
     });
 
-    let resp_text =
-        match api_post_with_route_tag("ilink/bot/getupdates", &params.token, body, &route_tag) {
-            Ok(s) => s,
-            Err(e) => {
-                let resp = PollResponse {
-                    messages: vec![],
-                    get_updates_buf: String::new(),
-                    error: Some(e),
-                };
-                return Ok(serde_json::to_string(&resp).unwrap_or_default());
-            }
-        };
+    let resp_text = match api_post("ilink/bot/getupdates", &params.token, body, &route_tag) {
+        Ok(s) => s,
+        Err(e) => {
+            let resp = PollResponse {
+                messages: vec![],
+                get_updates_buf: String::new(),
+                error: Some(e),
+            };
+            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+        }
+    };
 
     let result = parse_messages(&resp_text);
 
@@ -384,18 +380,17 @@ pub fn send_text(params_json: String) -> FnResult<String> {
     let body_str = body.to_string();
     debug!("send_text: request body: {}", body_str);
 
-    let resp_text =
-        match api_post_with_route_tag("ilink/bot/sendmessage", &params.token, body, &route_tag) {
-            Ok(s) => s,
-            Err(e) => {
-                error!("send_text: HTTP error: {}", e);
-                let resp = SendResponse {
-                    success: false,
-                    error: Some(e),
-                };
-                return Ok(serde_json::to_string(&resp).unwrap_or_default());
-            }
-        };
+    let resp_text = match api_post("ilink/bot/sendmessage", &params.token, body, &route_tag) {
+        Ok(s) => s,
+        Err(e) => {
+            error!("send_text: HTTP error: {}", e);
+            let resp = SendResponse {
+                success: false,
+                error: Some(e),
+            };
+            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+        }
+    };
 
     info!(
         "send_text: WeChat API response ({} bytes): {}",
@@ -445,22 +440,18 @@ pub fn get_upload_url(params_json: String) -> FnResult<String> {
         _ => UPLOAD_MEDIA_FILE,
     };
 
-    let (upload_req_json, aes_key_b64, _encrypted) = match build_media_upload(
-        &params.to_user_id,
-        &file_data,
-        &params.file_name,
-        med_type,
-    ) {
-        Ok(r) => r,
-        Err(e) => {
-            let resp = UploadResponse {
-                upload_param: String::new(),
-                aes_key: format!("error: {}", e),
-                error: None,
-            };
-            return Ok(serde_json::to_string(&resp).unwrap_or_default());
-        }
-    };
+    let (upload_req_json, aes_key_b64, _encrypted) =
+        match build_media_upload(&params.to_user_id, &file_data, &params.file_name, med_type) {
+            Ok(r) => r,
+            Err(e) => {
+                let resp = UploadResponse {
+                    upload_param: String::new(),
+                    aes_key: format!("error: {}", e),
+                    error: None,
+                };
+                return Ok(serde_json::to_string(&resp).unwrap_or_default());
+            }
+        };
 
     let upload_body: serde_json::Value = match serde_json::from_str(&upload_req_json) {
         Ok(v) => v,
@@ -476,7 +467,7 @@ pub fn get_upload_url(params_json: String) -> FnResult<String> {
 
     let route_tag = get_route_tag();
 
-    let upload_resp_text = match api_post_with_route_tag(
+    let upload_resp_text = match api_post(
         "ilink/bot/getuploadurl",
         &params.token,
         upload_body,
@@ -550,17 +541,16 @@ pub fn send_media(params_json: String) -> FnResult<String> {
 
     let route_tag = get_route_tag();
 
-    let resp_text =
-        match api_post_with_route_tag("ilink/bot/sendmessage", &params.token, body, &route_tag) {
-            Ok(s) => s,
-            Err(e) => {
-                let resp = SendResponse {
-                    success: false,
-                    error: Some(e),
-                };
-                return Ok(serde_json::to_string(&resp).unwrap_or_default());
-            }
-        };
+    let resp_text = match api_post("ilink/bot/sendmessage", &params.token, body, &route_tag) {
+        Ok(s) => s,
+        Err(e) => {
+            let resp = SendResponse {
+                success: false,
+                error: Some(e),
+            };
+            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+        }
+    };
 
     let result = parse_send_response(&resp_text);
 
@@ -594,18 +584,17 @@ pub fn get_config(params_json: String) -> FnResult<String> {
         "base_info": { "channel_version": CHANNEL_VERSION }
     });
 
-    let resp_text =
-        match api_post_with_route_tag("ilink/bot/getconfig", &params.token, body, &route_tag) {
-            Ok(s) => s,
-            Err(e) => {
-                let resp = GetConfigResponse {
-                    success: false,
-                    typing_ticket: String::new(),
-                    error: Some(e),
-                };
-                return Ok(serde_json::to_string(&resp).unwrap_or_default());
-            }
-        };
+    let resp_text = match api_post("ilink/bot/getconfig", &params.token, body, &route_tag) {
+        Ok(s) => s,
+        Err(e) => {
+            let resp = GetConfigResponse {
+                success: false,
+                typing_ticket: String::new(),
+                error: Some(e),
+            };
+            return Ok(serde_json::to_string(&resp).unwrap_or_default());
+        }
+    };
 
     match parse_get_config_response(&resp_text) {
         Ok(typing_ticket) => {
@@ -654,7 +643,7 @@ pub fn send_typing(params_json: String) -> FnResult<String> {
         params.ilink_user_id, params.status
     );
 
-    match api_post_with_route_tag("ilink/bot/sendtyping", &params.token, full_body, &route_tag) {
+    match api_post("ilink/bot/sendtyping", &params.token, full_body, &route_tag) {
         Ok(_resp_text) => Ok("{}".to_string()),
         Err(e) => {
             error!("send_typing: HTTP error: {}", e);

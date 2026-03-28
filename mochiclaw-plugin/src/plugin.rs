@@ -53,9 +53,13 @@ impl PluginHost {
         }])
         .with_allowed_hosts(manifest.capabilities.allowed_hosts.iter().cloned());
 
-        // Create host functions (rand + KV)
+        // Create host functions (rand + KV with permission control)
         let host_funcs = crate::host::HostFunctionsBuilder::new()
-            .with_kv(self.kv.clone())
+            .with_kv(
+                self.kv.clone(),
+                name,
+                manifest.capabilities.allowed_kv_read.clone(),
+            )
             .build();
 
         tracing::debug!(

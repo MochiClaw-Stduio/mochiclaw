@@ -26,6 +26,11 @@ pub struct Capabilities {
     /// Allowed HTTP hosts for this plugin
     #[serde(default)]
     pub allowed_hosts: Vec<String>,
+    /// Allowed KV read access to other plugins' key-value stores
+    /// Format: list of plugin names this plugin can read KV from
+    /// Write access is always limited to own plugin KV only
+    #[serde(default)]
+    pub allowed_kv_read: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

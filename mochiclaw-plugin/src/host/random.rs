@@ -3,6 +3,11 @@
 use extism::{CurrentPlugin, Function, UserData, Val, ValType};
 use rand::Rng;
 
+/// Create all rand host functions
+pub fn rand_functions() -> Vec<Function> {
+    vec![rand_u64_fn(), rand_bytes_fn()]
+}
+
 /// host_rand_u64: returns a random u64 as raw value (not memory offset)
 pub fn rand_u64_fn() -> Function {
     Function::new(
