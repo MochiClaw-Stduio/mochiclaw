@@ -32,6 +32,10 @@ mochiclaw/
 └── workspace/             # 工作目录
 ```
 
+## 文档
+
+详细文档请查看 [docs/zh/README.md](./docs/zh/README.md)。
+
 ## 快速开始
 
 ### 构建
@@ -72,10 +76,6 @@ api_key = "sk-your-key"
 ```bash
 cargo run --release -p mochiclaw-cli
 ```
-
-## 插件系统
-
-详见 [docs/zh/plugin-system.md](./docs/zh/plugin-system.md)
 
 ## 官方插件
 

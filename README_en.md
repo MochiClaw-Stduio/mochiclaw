@@ -32,6 +32,11 @@ mochiclaw/
 └── workspace/             # Working directory
 ```
 
+## Documentation
+
+For detailed documentation, see [docs/en/README.md](./docs/en/README.md).
+
+
 ## Quick Start
 
 ### Build
@@ -72,10 +77,6 @@ api_key = "sk-your-key"
 ```bash
 cargo run --release -p mochiclaw-cli
 ```
-
-## Plugin System
-
-See [docs/en/plugin-system.md](./docs/en/plugin-system.md)
 
 ## Official Plugins
 
