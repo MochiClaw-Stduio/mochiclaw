@@ -3,6 +3,7 @@
 //! Uses MessagePack encoding for input/output structures.
 
 use extism::{CurrentPlugin, Function, UserData, Val, ValType};
+use glob::Pattern;
 use rmp_serde::{Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
@@ -46,23 +47,23 @@ pub struct FsContext {
     /// Allowed root directory for filesystem operations (sandbox boundary)
     pub allowed_root: PathBuf,
 
-    // 读权限白名单
-    pub read_whitelist: Vec<PathBuf>,
-    // 写权限白名单
-    pub write_whitelist: Vec<PathBuf>,
-    // 读权限黑名单（优先级高于白名单）
-    pub read_blacklist: Vec<PathBuf>,
-    // 写权限黑名单（优先级高于白名单）
-    pub write_blacklist: Vec<PathBuf>,
+    // 读权限白名单（glob 模式）
+    pub read_whitelist: Vec<String>,
+    // 写权限白名单（glob 模式）
+    pub write_whitelist: Vec<String>,
+    // 读权限黑名单（glob 模式，优先级高于白名单）
+    pub read_blacklist: Vec<String>,
+    // 写权限黑名单（glob 模式，优先级高于白名单）
+    pub write_blacklist: Vec<String>,
 }
 
 impl FsContext {
     pub fn new(
         allowed_root: PathBuf,
-        read_whitelist: Vec<PathBuf>,
-        write_whitelist: Vec<PathBuf>,
-        read_blacklist: Vec<PathBuf>,
-        write_blacklist: Vec<PathBuf>,
+        read_whitelist: Vec<String>,
+        write_whitelist: Vec<String>,
+        read_blacklist: Vec<String>,
+        write_blacklist: Vec<String>,
     ) -> Self {
         // Canonicalize allowed_root first
         let allowed_root: PathBuf = match allowed_root.canonicalize() {
@@ -79,61 +80,94 @@ impl FsContext {
             }
         };
 
-        let resolve_list = |paths: Vec<PathBuf>| -> Vec<PathBuf> {
-            paths
-                .into_iter()
-                .filter_map(|p| p.canonicalize().ok())
+        // Process whitelist/blacklist: canonicalize non-glob paths
+        let process_list = |list: Vec<String>| -> Vec<String> {
+            list.into_iter()
+                .map(|p| {
+                    // If it looks like a glob pattern (contains * or ?), keep as-is
+                    if p.contains('*') || p.contains('?') {
+                        p
+                    } else {
+                        // Try to canonicalize the path
+                        PathBuf::from(&p)
+                            .canonicalize()
+                            .map(|c| c.to_string_lossy().to_string())
+                            .unwrap_or(p)
+                    }
+                })
                 .collect()
         };
 
         Self {
-            allowed_root: allowed_root.clone(),
-            read_whitelist: resolve_list(read_whitelist),
-            write_whitelist: resolve_list(write_whitelist),
-            read_blacklist: resolve_list(read_blacklist),
-            write_blacklist: resolve_list(write_blacklist),
+            allowed_root,
+            read_whitelist: process_list(read_whitelist),
+            write_whitelist: process_list(write_whitelist),
+            read_blacklist: process_list(read_blacklist),
+            write_blacklist: process_list(write_blacklist),
         }
     }
 
     /// Check if reading from the given resolved path is allowed
     fn can_read(&self, resolved_path: &Path) -> bool {
+        // Canonicalize the path to handle symlinks and ensure consistent comparison
+        // If canonicalize fails (file doesn't exist), use the path as-is for prefix checking
+        let canonical_path = resolved_path
+            .canonicalize()
+            .unwrap_or_else(|_| resolved_path.to_path_buf());
+
         // First check if within allowed_root
-        if !resolved_path.starts_with(&self.allowed_root) {
+        if !canonical_path.starts_with(&self.allowed_root) {
             return false;
         }
         // Check blacklist first
-        if self.is_in_list(resolved_path, &self.read_blacklist) {
+        if self.is_in_list(&canonical_path, &self.read_blacklist) {
             return false;
         }
-        // Then check whitelist - empty whitelist means allow all within allowed_root
+        // Then check whitelist - empty whitelist means deny all
         if self.read_whitelist.is_empty() {
-            true
+            false
         } else {
-            self.is_in_list(resolved_path, &self.read_whitelist)
+            self.is_in_list(&canonical_path, &self.read_whitelist)
         }
     }
 
     /// Check if writing to the given resolved path is allowed
     fn can_write(&self, resolved_path: &Path) -> bool {
+        // Canonicalize the path to handle symlinks and ensure consistent comparison
+        // If canonicalize fails (file doesn't exist), use the path as-is for prefix checking
+        let canonical_path = resolved_path
+            .canonicalize()
+            .unwrap_or_else(|_| resolved_path.to_path_buf());
+
         // First check if within allowed_root
-        if !resolved_path.starts_with(&self.allowed_root) {
+        if !canonical_path.starts_with(&self.allowed_root) {
             return false;
         }
         // Check write blacklist first
-        if self.is_in_list(resolved_path, &self.write_blacklist) {
+        if self.is_in_list(&canonical_path, &self.write_blacklist) {
             return false;
         }
-        // Then check write whitelist - empty whitelist means allow all within allowed_root
+        // Then check write whitelist - empty whitelist means deny all
         if self.write_whitelist.is_empty() {
-            true
+            false
         } else {
-            self.is_in_list(resolved_path, &self.write_whitelist)
+            self.is_in_list(&canonical_path, &self.write_whitelist)
         }
     }
 
-    fn is_in_list(&self, resolved_path: &Path, list: &[PathBuf]) -> bool {
-        list.iter()
-            .any(|p| resolved_path.starts_with(p) || resolved_path == *p)
+    fn is_in_list(&self, resolved_path: &Path, list: &[String]) -> bool {
+        let path_str = resolved_path.to_string_lossy();
+        list.iter().any(|p| {
+            // If pattern contains glob characters (* or ?), use glob matching
+            if (p.contains('*') || p.contains('?'))
+                && let Ok(pat) = Pattern::new(p)
+            {
+                return pat.matches(&path_str);
+            }
+            // Otherwise use prefix/exact match (non-glob paths are stored canonicalized)
+            let pattern_path = Path::new(p);
+            resolved_path.starts_with(pattern_path) || resolved_path == pattern_path
+        })
     }
 
     /// Resolve a path with workspace context (for write operations).
@@ -1337,15 +1371,15 @@ mod tests {
         let (_temp, root, _src, _symlink) = create_test_dirs();
         let ctx = FsContext::new(
             root.clone(),
-            Vec::new(), // empty read_whitelist
+            Vec::new(), // empty read_whitelist means deny all
             Vec::new(),
             Vec::new(),
             Vec::new(),
         );
 
-        // Within allowed_root with empty whitelist should be allowed
+        // Within allowed_root with empty whitelist should be denied
         let secret_file = root.join("secret.txt");
-        assert!(ctx.can_read(&secret_file));
+        assert!(!ctx.can_read(&secret_file));
     }
 
     #[test]
@@ -1354,14 +1388,14 @@ mod tests {
         let ctx = FsContext::new(
             root.clone(),
             Vec::new(),
-            Vec::new(), // empty write_whitelist
+            Vec::new(), // empty write_whitelist means deny all
             Vec::new(),
             Vec::new(),
         );
 
-        // Within allowed_root with empty whitelist should be allowed
+        // Within allowed_root with empty whitelist should be denied
         let new_file = root.join("new.txt");
-        assert!(ctx.can_write(&new_file));
+        assert!(!ctx.can_write(&new_file));
     }
 
     // ============================================================================
@@ -1373,7 +1407,7 @@ mod tests {
         let (_temp, root, src_dir, _symlink) = create_test_dirs();
         let ctx = FsContext::new(
             root.clone(),
-            vec![src_dir.clone()], // only src_dir is whitelisted for read
+            vec![src_dir.to_string_lossy().to_string()], // only src_dir is whitelisted for read
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -1392,7 +1426,7 @@ mod tests {
         let ctx = FsContext::new(
             root.clone(),
             Vec::new(),
-            vec![src_dir.clone()], // only src_dir is whitelisted for write
+            vec![src_dir.to_string_lossy().to_string()], // only src_dir is whitelisted for write
             Vec::new(),
             Vec::new(),
         );
@@ -1409,7 +1443,7 @@ mod tests {
         let (_temp, root, src_dir, _symlink) = create_test_dirs();
         let ctx = FsContext::new(
             root.clone(),
-            vec![root.clone()], // root is whitelisted, should include all subdirs
+            vec![root.to_string_lossy().to_string()], // root is whitelisted, should include all subdirs
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -1428,9 +1462,9 @@ mod tests {
         let (_temp, root, src_dir, _symlink) = create_test_dirs();
         let ctx = FsContext::new(
             root.clone(),
-            Vec::new(), // empty whitelist means allow all within root
+            vec![root.to_string_lossy().to_string()], // whitelist root for read
             Vec::new(),
-            vec![root.join("secret.txt")], // blacklist secret.txt
+            vec![root.join("secret.txt").to_string_lossy().to_string()], // blacklist secret.txt
             Vec::new(),
         );
 
@@ -1447,9 +1481,9 @@ mod tests {
         let ctx = FsContext::new(
             root.clone(),
             Vec::new(),
-            Vec::new(), // empty whitelist means allow all within root
+            vec![root.to_string_lossy().to_string()], // whitelist root for write
             Vec::new(),
-            vec![root.join("secret.txt")], // blacklist secret.txt
+            vec![root.join("secret.txt").to_string_lossy().to_string()], // blacklist secret.txt
         );
 
         // Blacklisted file should be blocked for writing
@@ -1464,10 +1498,10 @@ mod tests {
         let (_temp, root, _src_dir, _symlink) = create_test_dirs();
         let ctx = FsContext::new(
             root.clone(),
-            vec![root.join("secret.txt")], // whitelist says allow
-            vec![root.join("secret.txt")], // whitelist says allow
-            vec![root.join("secret.txt")], // but blacklist says deny
-            vec![root.join("secret.txt")],
+            vec![root.join("secret.txt").to_string_lossy().to_string()], // whitelist says allow
+            vec![root.join("secret.txt").to_string_lossy().to_string()], // whitelist says allow
+            vec![root.join("secret.txt").to_string_lossy().to_string()], // but blacklist says deny
+            vec![root.join("secret.txt").to_string_lossy().to_string()],
         );
 
         // Blacklist should take precedence
@@ -1480,9 +1514,9 @@ mod tests {
         let (_temp, root, src_dir, _symlink) = create_test_dirs();
         let ctx = FsContext::new(
             root.clone(),
-            Vec::new(),
-            Vec::new(),
-            vec![src_dir.clone()], // blacklist entire src directory
+            vec![root.to_string_lossy().to_string()], // whitelist root for read
+            vec![root.to_string_lossy().to_string()], // whitelist root for write
+            vec![src_dir.to_string_lossy().to_string()], // blacklist entire src directory
             Vec::new(),
         );
 
@@ -1508,9 +1542,9 @@ mod tests {
 
         let ctx = FsContext::new(
             root.clone(),
-            vec![root.join("allowed")], // whitelist allows /allowed
+            vec![root.join("allowed").to_string_lossy().to_string()], // whitelist allows /allowed
             Vec::new(),
-            vec![deep_dir.clone()], // blacklist blocks /allowed/secret
+            vec![deep_dir.to_string_lossy().to_string()], // blacklist blocks /allowed/secret
             Vec::new(),
         );
 
@@ -1536,19 +1570,21 @@ mod tests {
     #[test]
     fn test_exact_allowed_root_boundary() {
         let (_temp, root, _src, _symlink) = create_test_dirs();
+        // Empty whitelist means deny all, including the root itself
         let ctx = FsContext::new(root.clone(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
 
-        // The allowed_root itself should be accessible
-        assert!(ctx.can_read(&root));
-        assert!(ctx.can_write(&root));
+        // The allowed_root itself should NOT be accessible with empty whitelist
+        assert!(!ctx.can_read(&root));
+        assert!(!ctx.can_write(&root));
     }
 
     #[test]
     fn test_multiple_dots_in_path() {
         let (_temp, root, _src, _symlink) = create_test_dirs();
+        // Empty whitelist means deny all, including the root itself
         let ctx = FsContext::new(root.clone(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
 
-        // Path with multiple ./
+        // Path with multiple ./ should still resolve correctly (doesn't check permissions)
         let result = ctx.resolve_path_with_workspace(Path::new("./././secret.txt"), Path::new(""));
         assert!(result.is_ok());
     }
@@ -1597,7 +1633,14 @@ mod fs_integration_tests {
         include_bytes!("../../../target/wasm32-unknown-unknown/release/test_fs.wasm");
 
     fn create_test_context(root: &std::path::Path) -> FsContext {
-        FsContext::new(root.to_path_buf(), vec![], vec![], vec![], vec![])
+        // Use glob pattern to allow all files within root
+        FsContext::new(
+            root.to_path_buf(),
+            vec![format!("{}/**/*", root.to_string_lossy())],
+            vec![format!("{}/**/*", root.to_string_lossy())],
+            vec![],
+            vec![],
+        )
     }
 
     fn run_plugin_with_fs<F>(root: &std::path::Path, f: F)

@@ -14,7 +14,7 @@ use extism_convert::{FromBytesOwned, ToBytes};
 use mochiclaw_config::PluginConfig;
 use mochiclaw_sdk::tool::{ToolExecutionRequest, ToolExecutionResponse};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -150,30 +150,10 @@ impl PluginHost {
 
             let fs_context = FsContext::new(
                 allowed_root.into(),
-                capabilities
-                    .fs
-                    .read_whitelist
-                    .iter()
-                    .map(PathBuf::from)
-                    .collect(),
-                capabilities
-                    .fs
-                    .write_whitelist
-                    .iter()
-                    .map(PathBuf::from)
-                    .collect(),
-                capabilities
-                    .fs
-                    .read_blacklist
-                    .iter()
-                    .map(PathBuf::from)
-                    .collect(),
-                capabilities
-                    .fs
-                    .write_blacklist
-                    .iter()
-                    .map(PathBuf::from)
-                    .collect(),
+                capabilities.fs.read_whitelist.clone(),
+                capabilities.fs.write_whitelist.clone(),
+                capabilities.fs.read_blacklist.clone(),
+                capabilities.fs.write_blacklist.clone(),
             );
             builder = builder.with_fs(fs_context);
         }
