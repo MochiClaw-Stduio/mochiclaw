@@ -41,6 +41,19 @@ pub struct ToolFunction {
     pub arguments: String,
 }
 
+impl From<mochiclaw_sdk::provider::ToolCall> for ToolCall {
+    fn from(tc: mochiclaw_sdk::provider::ToolCall) -> Self {
+        ToolCall {
+            id: tc.id,
+            call_type: "function".to_string(),
+            function: ToolFunction {
+                name: tc.name,
+                arguments: serde_json::to_string(&tc.arguments).unwrap_or_default(),
+            },
+        }
+    }
+}
+
 /// Metadata line in JSONL session files
 #[derive(Debug, Serialize, Deserialize)]
 struct SessionMetadata {

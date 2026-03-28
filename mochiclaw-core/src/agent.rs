@@ -443,6 +443,25 @@ impl AgentLoop {
                 content: response.content.clone(),
             });
 
+            // Store assistant message with tool calls to session
+            {
+                let mut sessions = self.sessions.lock().unwrap();
+                let session = sessions.get_or_create(&session_key);
+                let session_tool_calls: Vec<crate::session::ToolCall> = response
+                    .tool_calls
+                    .iter()
+                    .cloned()
+                    .map(Into::into)
+                    .collect();
+                session.add_message_full(
+                    "assistant",
+                    &response.content,
+                    Some(session_tool_calls),
+                    None,
+                    None,
+                );
+            }
+
             // Execute each tool call and collect results
             for tool_call in &response.tool_calls {
                 let tool_name = &tool_call.name;
@@ -492,8 +511,21 @@ impl AgentLoop {
 
                 chat_messages.push(Message {
                     role: MessageRole::User, // Tool results use "user" role in OpenAI format
-                    content: tool_result_content,
+                    content: tool_result_content.clone(),
                 });
+
+                // Store tool result to session with tool_call_id and name
+                {
+                    let mut sessions = self.sessions.lock().unwrap();
+                    let session = sessions.get_or_create(&session_key);
+                    session.add_message_full(
+                        "tool",
+                        &tool_result_content,
+                        None,
+                        Some(tool_call.id.clone()),
+                        Some(tool_name.clone()),
+                    );
+                }
 
                 tracing::debug!("tool '{}' executed successfully", tool_name);
             }
