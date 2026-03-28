@@ -1,0 +1,103 @@
+# Mochiclaw
+
+一个基于插件的 AI Agent 运行时框架，支持 WASM 插件隔离执行。
+
+[English](./README_en.md) | 简体中文
+
+---
+
+## 特性
+
+- **插件化架构**：通过 WASM 插件扩展功能，支持热插拔
+- **隔离执行**：每个插件在独立的 WASM 虚拟机中运行，确保安全
+- **灵活的能力控制**：细粒度的网络、文件系统访问控制
+- **多插件支持**：支持同时加载多个插件，通过 Pool 实现并发执行
+- **Provider 插件**：支持自定义 LLM Provider（如 OpenAI 兼容接口）
+- **Channel 插件**：支持自定义消息通道（如微信）
+- **Tool 插件**：提供文件系统、HTTP 请求等工具
+
+## 项目结构
+
+```
+mochiclaw/
+├── mochiclaw-cli          # CLI 主程序
+├── mochiclaw-config       # 配置管理
+├── mochiclaw-core         # 核心运行时
+├── mochiclaw-plugin       # 插件管理
+├── mochiclaw-sdk          # 插件 SDK
+├── plugins/               # 官方插件
+│   ├── mochiclaw-openai   # OpenAI 兼容 Provider
+│   ├── mochiclaw-fs       # 文件系统工具
+│   └── mochiclaw-weixin   # 微信 Channel
+└── workspace/             # 工作目录
+```
+
+## 快速开始
+
+### 构建
+
+```bash
+# 构建所有（原生 + 插件）
+just build
+
+# 仅构建原生程序
+just build-native
+
+# 仅构建插件
+just build-plugin
+```
+
+### 配置
+
+编辑 `config.toml`:
+
+```toml
+[agent]
+model = "deepseek-chat"
+max_iterations = 40
+workspace = "./workspace"
+
+[runtime]
+plugin_dirs = ["./target/plugins"]
+
+[models.deepseek-chat]
+model = "deepseek-chat"
+provider = "mochiclaw-openai"
+api_base = "https://api.deepseek.com/v1"
+api_key = "sk-your-key"
+```
+
+### 运行
+
+```bash
+cargo run --release -p mochiclaw-cli
+```
+
+## 插件系统
+
+详见 [docs/zh/plugin-system.md](./docs/zh/plugin-system.md)
+
+## 官方插件
+
+| 插件 | 类型 | 说明 |
+|------|------|------|
+| mochiclaw-openai | Provider | OpenAI 兼容 API |
+| mochiclaw-fs | Tool | 文件系统操作 |
+| mochiclaw-weixin | Channel | 微信消息通道 |
+
+## 开发
+
+```bash
+# 代码格式化
+just fmt
+
+# 代码检查
+just lint
+
+# 运行测试
+just test
+```
+
+## 许可证
+
+MIT
