@@ -4,7 +4,7 @@ build-native:
 
 # Build WASM plugins
 build-plugin:
-    cargo build --release --target wasm32-unknown-unknown -p mochiclaw-openai -p mochiclaw-weixin
+    cargo build --release --target wasm32-unknown-unknown -p mochiclaw-openai -p mochiclaw-weixin -p mochiclaw-example-tool
 
 # Build test plugins (for integration tests)
 build-test-plugin:

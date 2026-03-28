@@ -59,6 +59,9 @@ pub struct Features {
     /// Whether this plugin provides command capability
     #[serde(default)]
     pub command: bool,
+    /// Whether this plugin provides tool capability
+    #[serde(default)]
+    pub tool: bool,
 }
 
 impl PluginManifest {

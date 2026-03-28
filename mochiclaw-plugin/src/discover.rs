@@ -54,8 +54,9 @@ pub fn discover(plugin_dir: &Path) -> Result<Vec<DiscoveredPlugin>, std::io::Err
         };
 
         // Check if this plugin should be loaded
-        if !manifest.features.provider && !manifest.features.channel && !manifest.features.command {
-            tracing::debug!("skipping '{}': not a channel, provider, or command", plugin_name);
+        if !manifest.features.provider && !manifest.features.channel
+           && !manifest.features.command && !manifest.features.tool {
+            tracing::debug!("skipping '{}': not a channel, provider, command, or tool", plugin_name);
             continue;
         }
 

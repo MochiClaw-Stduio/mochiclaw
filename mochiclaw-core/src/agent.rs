@@ -10,6 +10,7 @@ use mochiclaw_plugin::PluginHost;
 use mochiclaw_sdk::channel::{PollParams, PollResponse, SendResponse, SendTextParams, SetTypingParams};
 use mochiclaw_sdk::message::InboundMessage;
 use mochiclaw_sdk::provider::{ChatRequest, ChatResponse, Message, MessageRole};
+use mochiclaw_sdk::tool::{Tool, ToolExecutionResponse};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -31,6 +32,10 @@ pub struct AgentLoop {
     commands: CommandRegistry,
     /// Context builder for system prompts
     context_builder: ContextBuilder,
+    /// Available tool definitions from tool plugins
+    tool_definitions: Mutex<Vec<Tool>>,
+    /// Mapping from tool name to plugin name that provides it
+    tool_plugin_map: Mutex<HashMap<String, String>>,
 }
 
 impl AgentLoop {
@@ -90,11 +95,86 @@ impl AgentLoop {
             sessions: Mutex::new(SessionManager::new(sessions_dir)),
             commands: CommandRegistry::new(),
             context_builder: ContextBuilder::new(workspace, None),
+            tool_definitions: Mutex::new(Vec::new()),
+            tool_plugin_map: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Discover and load tool definitions from all loaded tool plugins.
+    /// Tool plugins are identified by having features.tool = true in their manifest.
+    async fn load_tool_plugins(&self) {
+        let host = self.plugin_host.lock().await;
+        // Only query plugins that declared features.tool = true
+        let tool_plugin_names = host.tool_plugins();
+        drop(host);
+
+        let mut tool_definitions = Vec::new();
+        let mut tool_plugin_map: HashMap<String, String> = HashMap::new();
+        let mut loaded_plugin_count = 0;
+
+        for plugin_name in tool_plugin_names {
+            // Try to call get_tools on this plugin
+            let tools_result: Result<String, _> = {
+                let host = self.plugin_host.lock().await;
+                host.call(&plugin_name, "get_tools", &())
+            };
+
+            match tools_result {
+                Ok(tools_json) => {
+                    // Parse the tools JSON
+                    match serde_json::from_str::<Vec<Tool>>(&tools_json) {
+                        Ok(tools) => {
+                            loaded_plugin_count += 1;
+                            tracing::info!(
+                                "loaded {} tools from plugin '{}'",
+                                tools.len(),
+                                plugin_name
+                            );
+                            for tool in tools {
+                                tool_plugin_map.insert(tool.name.clone(), plugin_name.clone());
+                                tool_definitions.push(tool);
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "failed to parse tools from plugin '{}': {}",
+                                plugin_name,
+                                e
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    // Tool plugin but get_tools failed - this is a real error
+                    tracing::warn!(
+                        "tool plugin '{}' failed to provide tools (get_tools failed): {}",
+                        plugin_name,
+                        e
+                    );
+                }
+            }
+        }
+
+        // Update the agent state with discovered tools
+        *self.tool_definitions.lock().unwrap() = tool_definitions;
+        *self.tool_plugin_map.lock().unwrap() = tool_plugin_map;
+
+        if self.tool_definitions.lock().unwrap().is_empty() {
+            tracing::info!("no tool plugins loaded");
+        } else {
+            tracing::info!(
+                "total tool definitions: {}, from {} tool plugin(s)",
+                self.tool_definitions.lock().unwrap().len(),
+                loaded_plugin_count
+            );
         }
     }
 
     pub async fn run(&self) -> Result<(), Error> {
         tracing::info!("AgentLoop started");
+
+        // Initialize tool plugins
+        self.load_tool_plugins().await;
 
         let mut poll_interval = interval(Duration::from_secs(2));
 
@@ -287,7 +367,7 @@ impl AgentLoop {
         );
 
         // Convert to provider messages
-        let chat_messages: Vec<Message> = context_messages
+        let mut chat_messages: Vec<Message> = context_messages
             .into_iter()
             .map(|m| Message {
                 role: match m.role.as_str() {
@@ -299,49 +379,144 @@ impl AgentLoop {
             })
             .collect();
 
-        // Build chat request for provider
-        let chat_request = ChatRequest {
-            model: self.model_config.model.clone(),
-            messages: chat_messages,
-            tools: Vec::new(),
-            max_tokens: 4096,
-            temperature: 0.7,
-            api_key: self.model_config.api_key.clone(),
-            api_base: self.model_config.api_base.clone(),
-        };
-
-        // Call provider plugin
-        let response = {
-            let host = self.plugin_host.lock().await;
-
-            let resp: ChatResponse = host
-                .call(&self.model_config.provider, "chat", &chat_request)
-                .map_err(|e| Error::Plugin(format!("provider call failed: {}", e)))?;
-
-            if let Some(err) = resp.error {
-                return Err(Error::Plugin(format!("provider error: {}", err)));
-            }
-
-            resp.content
-        };
-
-        tracing::info!(
-            "got response: {}...",
-            response.chars().take(100).collect::<String>()
-        );
-
-        // Add messages to session and save
+        // Add user message to session history (will be updated with full content later)
         {
             let mut sessions = self.sessions.lock().unwrap();
             let session = sessions.get_or_create(&session_key);
             session.add_message("user", &msg.content);
-            session.add_message("assistant", &response);
+        }
+
+        // Main agent loop - handle tool calls iteratively
+        let mut final_response = String::new();
+        let mut iterations = 0;
+
+        loop {
+            iterations += 1;
+            if iterations > self.max_iterations {
+                tracing::warn!(
+                    "max iterations ({}) reached for message from {}",
+                    self.max_iterations,
+                    msg.channel
+                );
+                final_response = "I apologize, but I reached the maximum number of iterations. Please try again with a simpler request.".to_string();
+                break;
+            }
+
+            // Build chat request for provider with current messages and tools
+            let chat_request = ChatRequest {
+                model: self.model_config.model.clone(),
+                messages: chat_messages.clone(),
+                tools: self.tool_definitions.lock().unwrap().clone(),
+                max_tokens: 4096,
+                temperature: 0.7,
+                api_key: self.model_config.api_key.clone(),
+                api_base: self.model_config.api_base.clone(),
+            };
+
+            // Call provider plugin
+            let response: ChatResponse = {
+                let host = self.plugin_host.lock().await;
+                host.call(&self.model_config.provider, "chat", &chat_request)
+                    .map_err(|e| Error::Plugin(format!("provider call failed: {}", e)))?
+            };
+
+            if let Some(err) = response.error {
+                return Err(Error::Plugin(format!("provider error: {}", err)));
+            }
+
+            // Check if there are tool calls to execute
+            if response.tool_calls.is_empty() {
+                // No tool calls, this is the final response
+                final_response = response.content;
+                break;
+            }
+
+            tracing::info!(
+                "received {} tool call(s) in iteration {}",
+                response.tool_calls.len(),
+                iterations
+            );
+
+            // Add assistant message with tool calls to chat_messages
+            chat_messages.push(Message {
+                role: MessageRole::Assistant,
+                content: response.content.clone(),
+            });
+
+            // Execute each tool call and collect results
+            for tool_call in &response.tool_calls {
+                let tool_name = &tool_call.name;
+
+                // Find which plugin provides this tool
+                let plugin_name = match self.tool_plugin_map.lock().unwrap().get(tool_name) {
+                    Some(name) => name.clone(),
+                    None => {
+                        tracing::warn!("no plugin found for tool '{}'", tool_name);
+                        // Add error result message
+                        chat_messages.push(Message {
+                            role: MessageRole::User,  // Tool results use "user" role in OpenAI format
+                            content: format!(
+                                r#"{{"tool_call_id": "{}", "name": "{}", "content": "Error: tool '{}' not found"}}"#,
+                                tool_call.id, tool_name, tool_name
+                            ),
+                        });
+                        continue;
+                    }
+                };
+
+                // Execute the tool
+                tracing::debug!(
+                    "executing tool '{}' via plugin '{}'",
+                    tool_name,
+                    plugin_name
+                );
+
+                let tool_response: ToolExecutionResponse = {
+                    let host = self.plugin_host.lock().await;
+                    host.call_tool(&plugin_name, tool_name, &tool_call.arguments)
+                        .map_err(|e| Error::Plugin(format!("tool call failed: {}", e)))?
+                };
+
+                // Format tool result as a message
+                let tool_result_content = if let Some(error) = tool_response.error {
+                    format!(
+                        r#"{{"tool_call_id": "{}", "name": "{}", "content": "Error: {}"}}"#,
+                        tool_call.id, tool_name, error
+                    )
+                } else {
+                    format!(
+                        r#"{{"tool_call_id": "{}", "name": "{}", "content": {}}}"#,
+                        tool_call.id,
+                        tool_name,
+                        tool_response.result
+                    )
+                };
+
+                chat_messages.push(Message {
+                    role: MessageRole::User,  // Tool results use "user" role in OpenAI format
+                    content: tool_result_content,
+                });
+
+                tracing::debug!("tool '{}' executed successfully", tool_name);
+            }
+        }
+
+        // Add assistant response to session
+        {
+            let mut sessions = self.sessions.lock().unwrap();
+            let session = sessions.get_or_create(&session_key);
+            session.add_message("assistant", &final_response);
             if let Err(e) = sessions.save(&session_key) {
                 tracing::warn!("failed to save session: {}", e);
             }
         }
 
-        self.send_to_channel(&msg.channel, &msg.chat_id, &response)
+        tracing::info!(
+            "got final response: {}...",
+            final_response.chars().take(100).collect::<String>()
+        );
+
+        self.send_to_channel(&msg.channel, &msg.chat_id, &final_response)
             .await?;
 
         // Send typing stop indicator (best-effort, non-blocking)

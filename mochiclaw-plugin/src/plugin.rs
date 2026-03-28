@@ -10,6 +10,7 @@ use crate::host::kv::PluginKV;
 use crate::manifest::PluginManifest;
 use extism::{CompiledPlugin, Manifest, Plugin, PluginBuilder, Pool, PoolBuilder, Wasm};
 use extism_convert::{FromBytesOwned, ToBytes};
+use mochiclaw_sdk::tool::{ToolExecutionRequest, ToolExecutionResponse};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -27,6 +28,8 @@ pub struct PluginHost {
     fallback_proxy_url: Option<String>,
     /// Whether to use system proxy when fallback_proxy_url is None
     use_system_proxy: bool,
+    /// Manifests for all loaded plugins
+    manifests: HashMap<String, PluginManifest>,
 }
 
 impl PluginHost {
@@ -37,6 +40,7 @@ impl PluginHost {
             kv: Arc::new(PluginKV::new()),
             fallback_proxy_url: None,
             use_system_proxy: false,
+            manifests: HashMap::new(),
         }
     }
 
@@ -130,6 +134,9 @@ impl PluginHost {
         self.compiled.insert(name.to_string(), compiled);
         self.pools.insert(name.to_string(), pool);
 
+        // Store the manifest for later inspection
+        self.manifests.insert(name.to_string(), manifest.clone());
+
         tracing::info!(
             "loaded plugin '{}' from {} (hosts: {:?})",
             name,
@@ -172,12 +179,43 @@ impl PluginHost {
             .map_err(|e| Error::Plugin(format!("call failed: {}", e)))
     }
 
+    /// Call a tool function on a plugin.
+    ///
+    /// This is a convenience method specifically for tool execution that constructs
+    /// the ToolExecutionRequest internally and calls the plugin's `execute_tool` function.
+    pub fn call_tool(
+        &self,
+        plugin_name: &str,
+        tool_name: &str,
+        arguments: &HashMap<String, serde_json::Value>,
+    ) -> Result<ToolExecutionResponse, Error> {
+        let request = ToolExecutionRequest {
+            name: tool_name.to_string(),
+            arguments: arguments.clone(),
+        };
+        self.call(plugin_name, "execute_tool", &request)
+    }
+
     pub fn has_plugin(&self, name: &str) -> bool {
         self.pools.contains_key(name)
     }
 
     pub fn plugin_count(&self) -> usize {
         self.pools.len()
+    }
+
+    /// Get a list of all loaded plugin names
+    pub fn plugin_names(&self) -> Vec<String> {
+        self.pools.keys().cloned().collect()
+    }
+
+    /// Get a list of plugin names that declared features.tool = true
+    pub fn tool_plugins(&self) -> Vec<String> {
+        self.manifests
+            .iter()
+            .filter(|(_, m)| m.features.tool)
+            .map(|(name, _)| name.clone())
+            .collect()
     }
 
     /// Load a discovered plugin (without per-plugin proxy)

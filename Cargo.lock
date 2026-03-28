@@ -1634,6 +1634,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "mochiclaw-example-tool"
+version = "0.1.0"
+dependencies = [
+ "extism-manifest",
+ "extism-pdk",
+ "mochiclaw-sdk",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mochiclaw-openai"
 version = "0.1.0"
 dependencies = [
