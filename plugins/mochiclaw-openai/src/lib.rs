@@ -1,11 +1,10 @@
 //! OpenAI Compatible Provider Plugin
 //!
 //! This plugin implements an LLM provider using the OpenAI Chat Completions API.
-//! Uses extism's built-in http::request for HTTP calls.
+//! Uses HttpClient from mochiclaw_sdk for HTTP calls.
 
-use extism_pdk::http::{request, HttpResponse};
 use extism_pdk::*;
-use extism_manifest::HttpRequest;
+use mochiclaw_sdk::host::http::HttpClient;
 use mochiclaw_sdk::provider::{ChatRequest, ChatResponse, MessageRole};
 use serde::Serialize;
 
@@ -26,14 +25,6 @@ struct ChatChunk {
 #[derive(Debug, Serialize)]
 struct ErrorResponse {
     error: String,
-}
-
-/// Make an HTTP request using extism's built-in http support
-fn make_http_request(req: HttpRequest, body: Option<String>) -> Result<HttpResponse, Error> {
-    match body {
-        Some(b) => request(&req, Some(b.as_str())),
-        None => request(&req, Option::<()>::None),
-    }
 }
 
 /// Non-streaming chat completion
@@ -70,25 +61,33 @@ pub fn chat(request_json: String) -> FnResult<String> {
     // Remove /v1 suffix if present to avoid double path segments
     let base = api_base.trim_end_matches('/').trim_end_matches("/v1");
     let url = format!("{}/v1/chat/completions", base);
-    let http_req = HttpRequest::new(&url)
-        .with_method("POST")
-        .with_header("Content-Type", "application/json")
-        .with_header("Authorization", format!("Bearer {}", api_key));
 
-    // Make the request
-    let response = match make_http_request(http_req, Some(body.to_string())) {
-        Ok(resp) => resp,
+    // Make the request using HttpClient
+    let response = match HttpClient::post(&url)
+        .header("Content-Type", "application/json")
+        .header("Authorization", format!("Bearer {}", api_key).as_str())
+        .json(&body)
+    {
+        Ok(client) => match client.send() {
+            Ok(resp) => resp,
+            Err(e) => {
+                let response = ErrorResponse {
+                    error: format!("HTTP request failed: {}", e),
+                };
+                return Ok(serde_json::to_string(&response).unwrap_or_default());
+            }
+        },
         Err(e) => {
             let response = ErrorResponse {
-                error: format!("HTTP request failed: {}", e),
+                error: format!("Failed to build request: {}", e),
             };
             return Ok(serde_json::to_string(&response).unwrap_or_default());
         }
     };
 
-    let status = response.status_code();
+    let status = response.status;
     if status != 200 {
-        let body_str = String::from_utf8_lossy(&response.body()).to_string();
+        let body_str = String::from_utf8_lossy(response.bytes()).to_string();
         let response = ErrorResponse {
             error: format!("OpenAI API returned status {}: {}", status, body_str),
         };
@@ -96,8 +95,8 @@ pub fn chat(request_json: String) -> FnResult<String> {
     }
 
     // Parse the OpenAI response
-    let resp_body = response.body();
-    let resp_str = String::from_utf8_lossy(&resp_body).to_string();
+    let resp_body = response.bytes();
+    let resp_str = String::from_utf8_lossy(resp_body).to_string();
     let openai_resp: serde_json::Value = match serde_json::from_str(&resp_str) {
         Ok(v) => v,
         Err(e) => {
@@ -157,17 +156,26 @@ pub fn chat_stream(request_json: String) -> FnResult<String> {
     // Remove /v1 suffix if present to avoid double path segments
     let base = api_base.trim_end_matches('/').trim_end_matches("/v1");
     let url = format!("{}/v1/chat/completions", base);
-    let http_req = HttpRequest::new(&url)
-        .with_method("POST")
-        .with_header("Content-Type", "application/json")
-        .with_header("Authorization", format!("Bearer {}", api_key));
 
-    // Make the streaming request
-    let response = match make_http_request(http_req, Some(body.to_string())) {
-        Ok(resp) => resp,
+    // Make the streaming request using HttpClient
+    let response = match HttpClient::post(&url)
+        .header("Content-Type", "application/json")
+        .header("Authorization", format!("Bearer {}", api_key).as_str())
+        .json(&body)
+    {
+        Ok(client) => match client.send() {
+            Ok(resp) => resp,
+            Err(e) => {
+                let chunk = ChatChunk {
+                    delta: format!("HTTP request failed: {}", e),
+                    done: true,
+                };
+                return Ok(serde_json::to_string(&vec![chunk]).unwrap_or_default());
+            }
+        },
         Err(e) => {
             let chunk = ChatChunk {
-                delta: format!("HTTP request failed: {}", e),
+                delta: format!("Failed to build request: {}", e),
                 done: true,
             };
             return Ok(serde_json::to_string(&vec![chunk]).unwrap_or_default());
@@ -175,8 +183,8 @@ pub fn chat_stream(request_json: String) -> FnResult<String> {
     };
 
     // Parse SSE stream from response body
-    let resp_body = response.body();
-    let body_str = String::from_utf8_lossy(&resp_body).to_string();
+    let resp_body = response.bytes();
+    let body_str = String::from_utf8_lossy(resp_body).to_string();
     let lines: Vec<&str> = body_str.lines().collect();
     let mut chunks: Vec<ChatChunk> = Vec::new();
 

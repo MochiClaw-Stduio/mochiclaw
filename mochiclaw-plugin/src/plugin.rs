@@ -5,6 +5,7 @@
 
 use crate::discover::DiscoveredPlugin;
 use crate::error::Error;
+use crate::host::http::HttpContext;
 use crate::host::kv::PluginKV;
 use crate::manifest::PluginManifest;
 use extism::{CompiledPlugin, Manifest, Plugin, PluginBuilder, Pool, PoolBuilder, Wasm};
@@ -21,6 +22,8 @@ pub struct PluginHost {
     pools: HashMap<String, Pool>,
     /// KV store for plugin state
     kv: Arc<PluginKV>,
+    /// HTTP proxy URL (optional)
+    http_proxy_url: Option<String>,
 }
 
 impl PluginHost {
@@ -29,7 +32,14 @@ impl PluginHost {
             compiled: HashMap::new(),
             pools: HashMap::new(),
             kv: Arc::new(PluginKV::new()),
+            http_proxy_url: std::env::var("HTTP_PROXY").ok(),
         }
+    }
+
+    /// Set HTTP proxy URL
+    pub fn with_http_proxy(mut self, proxy_url: Option<String>) -> Self {
+        self.http_proxy_url = proxy_url;
+        self
     }
 
     /// Load a plugin with its manifest
@@ -53,13 +63,20 @@ impl PluginHost {
         }])
         .with_allowed_hosts(manifest.capabilities.allowed_hosts.iter().cloned());
 
-        // Create host functions (rand + KV with permission control)
+        // Create host functions (rand + KV + HTTP with proxy support)
+        let http_context = HttpContext::new(
+            self.http_proxy_url.clone(),
+            manifest.capabilities.allowed_hosts.clone(),
+        )
+        .map_err(|e| Error::Plugin(format!("failed to create HTTP context: {}", e)))?;
+
         let host_funcs = crate::host::HostFunctionsBuilder::new()
             .with_kv(
                 self.kv.clone(),
                 name,
                 manifest.capabilities.allowed_kv_read.clone(),
             )
+            .with_http(http_context)
             .build();
 
         tracing::debug!(

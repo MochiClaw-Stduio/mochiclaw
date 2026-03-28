@@ -3,9 +3,11 @@
 use extism::Function;
 use std::sync::Arc;
 
+pub mod http;
 pub mod kv;
 pub mod random;
 
+pub use http::{http_functions, HttpContext};
 pub use kv::{PluginKV, kv_functions};
 pub use random::rand_functions;
 
@@ -13,11 +15,12 @@ pub use random::rand_functions;
 #[derive(Default)]
 pub struct HostFunctionsBuilder {
     kv: Option<(Arc<PluginKV>, String, Vec<String>)>, // (kv, plugin_name, allowed_kv_read)
+    http: Option<HttpContext>,
 }
 
 impl HostFunctionsBuilder {
     pub fn new() -> Self {
-        Self { kv: None }
+        Self { kv: None, http: None }
     }
 
     pub fn with_kv(
@@ -30,10 +33,18 @@ impl HostFunctionsBuilder {
         self
     }
 
+    pub fn with_http(mut self, ctx: HttpContext) -> Self {
+        self.http = Some(ctx);
+        self
+    }
+
     pub fn build(self) -> Vec<Function> {
         let mut funcs = rand_functions();
         if let Some((kv, plugin_name, allowed_kv_read)) = self.kv {
             funcs.extend(kv_functions(kv, &plugin_name, allowed_kv_read));
+        }
+        if let Some(ctx) = self.http {
+            funcs.extend(http_functions(ctx));
         }
         funcs
     }

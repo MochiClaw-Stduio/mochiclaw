@@ -9,7 +9,7 @@ pub const BASE_URL: &str = "https://ilinkai.weixin.qq.com";
 pub const CDN_BASE_URL: &str = "https://novac2c.cdn.weixin.qq.com/c2c";
 
 /// Channel version sent with each request
-pub const CHANNEL_VERSION: &str = "1.0.3";
+pub const CHANNEL_VERSION: &str = "2.1.1";
 
 /// Message item types
 pub const ITEM_TEXT: i32 = 1;

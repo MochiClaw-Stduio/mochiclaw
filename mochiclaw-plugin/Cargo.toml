@@ -14,7 +14,10 @@ tracing.workspace = true
 anyhow.workspace = true
 toml.workspace = true
 rand.workspace = true
-extism = "1"
+reqwest = { workspace = true, features = ["json", "blocking"] }
+url.workspace = true
+glob.workspace = true
+extism = { version = "1", default-features = false, features = ["register-filesystem", "wasmtime-default-features"] }
 mochiclaw-sdk = { path = "../mochiclaw-sdk" }
 
 [dev-dependencies]

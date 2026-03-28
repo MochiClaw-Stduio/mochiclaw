@@ -3,9 +3,8 @@
 //! HTTP client and API methods for WeChat iLink HTTP API.
 
 use base64::Engine;
-use extism_manifest::HttpRequest;
-use extism_pdk::http::{HttpResponse, request};
 use extism_pdk::*;
+use mochiclaw_sdk::host::http::HttpClient;
 use std::collections::HashMap;
 
 use crate::constants::*;
@@ -21,13 +20,6 @@ use crate::types::*;
 // ============================================================================
 // HTTP Helpers
 // ============================================================================
-
-fn make_http_request(req: HttpRequest, body: Option<&str>) -> Result<HttpResponse, String> {
-    match body {
-        Some(b) => request(&req, Some(b)).map_err(|e| e.to_string()),
-        None => request(&req, Option::<()>::None).map_err(|e| e.to_string()),
-    }
-}
 
 pub fn make_headers(token: &str, route_tag: &str) -> HashMap<String, String> {
     use base64::engine::general_purpose::STANDARD as BASE64;
@@ -57,14 +49,6 @@ fn api_get(
     endpoint: &str,
     token: &str,
     params: Option<HashMap<String, String>>,
-) -> Result<String, String> {
-    api_get_with_route_tag(endpoint, token, params, "")
-}
-
-fn api_get_with_route_tag(
-    endpoint: &str,
-    token: &str,
-    params: Option<HashMap<String, String>>,
     route_tag: &str,
 ) -> Result<String, String> {
     let mut url = format!("https://ilinkai.weixin.qq.com/{}", endpoint);
@@ -75,23 +59,22 @@ fn api_get_with_route_tag(
         }
     }
 
-    let mut headers = make_headers(token, route_tag);
-    headers.insert("Content-Type".to_string(), "application/json".to_string());
+    let headers = make_headers(token, route_tag);
 
-    let mut req = HttpRequest::new(&url).with_method("GET");
+    let mut client = HttpClient::get(&url);
     for (k, v) in headers {
-        req = req.with_header(&k, &v);
+        client = client.header(&k, &v);
     }
 
-    let resp = make_http_request(req, None)?;
-    if resp.status_code() != 200 {
+    let resp = client.send().map_err(|e| e.to_string())?;
+    if resp.status != 200 {
         return Err(format!(
             "HTTP {}: {}",
-            resp.status_code(),
-            String::from_utf8_lossy(&resp.body())
+            resp.status,
+            String::from_utf8_lossy(resp.bytes())
         ));
     }
-    Ok(String::from_utf8_lossy(&resp.body()).to_string())
+    Ok(String::from_utf8_lossy(resp.bytes()).to_string())
 }
 
 fn api_post(
@@ -104,10 +87,9 @@ fn api_post(
 
     let headers = make_headers(token, route_tag);
 
-    let mut req = HttpRequest::new(&url).with_method("POST");
-    req = req.with_header("Content-Type", "application/json");
+    let mut client = HttpClient::post(&url);
     for (k, v) in headers {
-        req = req.with_header(&k, &v);
+        client = client.header(&k, &v);
     }
 
     let body_str = body.to_string();
@@ -116,19 +98,23 @@ fn api_post(
         endpoint,
         body_str.len()
     );
-    let resp = make_http_request(req, Some(&body_str))?;
-    if resp.status_code() != 200 {
+
+    let resp = client
+        .body(body_str.into_bytes())
+        .send()
+        .map_err(|e| e.to_string())?;
+    if resp.status != 200 {
         return Err(format!(
             "HTTP {}: {}",
-            resp.status_code(),
-            String::from_utf8_lossy(&resp.body())
+            resp.status,
+            String::from_utf8_lossy(resp.bytes())
         ));
     }
-    let resp_text = String::from_utf8_lossy(&resp.body()).to_string();
+    let resp_text = String::from_utf8_lossy(resp.bytes()).to_string();
     debug!(
         "api_post: endpoint={}, resp_len={}",
         endpoint,
-        resp.body().len()
+        resp.bytes().len()
     );
     Ok(resp_text)
 }
@@ -183,6 +169,7 @@ pub fn login(params_json: String) -> FnResult<String> {
             p.insert("bot_type".to_string(), "3".to_string());
             p
         }),
+        &get_route_tag(),
     ) {
         Ok(s) => s,
         Err(e) => {
@@ -254,6 +241,7 @@ pub fn check_login(params_json: String) -> FnResult<String> {
             p.insert("qrcode".to_string(), params.temp_token);
             p
         }),
+        &get_route_tag(),
     ) {
         Ok(s) => s,
         Err(e) => {
@@ -669,7 +657,11 @@ pub fn send_typing(params_json: String) -> FnResult<String> {
 }
 
 /// Internal helper to fetch typing_ticket via get_config API
-fn fetch_typing_ticket(token: &str, ilink_user_id: &str, route_tag: &str) -> Result<String, String> {
+fn fetch_typing_ticket(
+    token: &str,
+    ilink_user_id: &str,
+    route_tag: &str,
+) -> Result<String, String> {
     let body = serde_json::json!({
         "ilink_user_id": ilink_user_id,
         "context_token": "",
