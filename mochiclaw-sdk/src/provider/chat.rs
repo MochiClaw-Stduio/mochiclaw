@@ -6,7 +6,7 @@ use extism_convert::{FromBytes, ToBytes, Msgpack};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromBytes)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromBytes, ToBytes)]
 #[encoding(Msgpack)]
 pub struct ChatRequest {
     pub model: String,

@@ -6,15 +6,7 @@ use extism_pdk::{FromBytes, ToBytes, Msgpack};
 use mochiclaw_sdk::message::InboundMessage;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, FromBytes)]
-#[encoding(Msgpack)]
-pub struct SendTextParams {
-    pub token: String,
-    pub to_user_id: String,
-    pub content: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, ToBytes)]
+#[derive(Debug, Serialize, Deserialize, FromBytes, ToBytes)]
 #[encoding(Msgpack)]
 pub struct UploadResponse {
     pub upload_param: String,

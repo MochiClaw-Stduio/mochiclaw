@@ -21,7 +21,7 @@ pub struct LoginParams {
 }
 
 /// Response from the login function - generic for all channel plugins
-#[derive(Debug, Clone, Serialize, Deserialize, ToBytes)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromBytes, ToBytes)]
 #[encoding(Msgpack)]
 pub struct LoginResponse {
     /// Status: "logged_in", "need_qr", "error"
@@ -48,7 +48,7 @@ pub struct LoginResponse {
 // ============================================================================
 
 /// Response from checking QR code scan status - generic for all channel plugins
-#[derive(Debug, Clone, Serialize, Deserialize, ToBytes)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromBytes, ToBytes)]
 #[encoding(Msgpack)]
 pub struct QrStatusResponse {
     /// Status: "confirmed", "scaned", "expired", "error", or continue polling
@@ -72,7 +72,7 @@ pub struct QrStatusParams {
 // Poll Types
 // ============================================================================
 
-#[derive(Debug, Serialize, Deserialize, ToBytes)]
+#[derive(Debug, Serialize, Deserialize, FromBytes, ToBytes)]
 #[encoding(Msgpack)]
 pub struct PollResponse {
     pub messages: Vec<InboundMessage>,
@@ -80,7 +80,7 @@ pub struct PollResponse {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Deserialize, FromBytes)]
+#[derive(Debug, Serialize, Deserialize, FromBytes, ToBytes)]
 #[encoding(Msgpack)]
 pub struct PollParams {
     pub token: String,
@@ -92,7 +92,16 @@ pub struct PollParams {
 // Send Types
 // ============================================================================
 
-#[derive(Debug, Serialize, Deserialize, ToBytes)]
+/// Parameters for sending a text message - generic for all channel plugins
+#[derive(Debug, Serialize, Deserialize, FromBytes, ToBytes)]
+#[encoding(Msgpack)]
+pub struct SendTextParams {
+    pub token: String,
+    pub to_user_id: String,
+    pub content: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, FromBytes, ToBytes)]
 #[encoding(Msgpack)]
 pub struct SendResponse {
     pub success: bool,
@@ -103,7 +112,7 @@ pub struct SendResponse {
 // Typing Indicator Types
 // ============================================================================
 
-#[derive(Debug, Deserialize, FromBytes)]
+#[derive(Debug, Serialize, Deserialize, FromBytes, ToBytes)]
 #[encoding(Msgpack)]
 pub struct SetTypingParams {
     pub token: String,

@@ -1,26 +1,11 @@
 //! CLI commands
 
 use anyhow::Result;
-use rmp_serde::{Deserializer, Serializer};
-use serde::{Deserialize, Serialize};
-use std::io::Cursor;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use mochiclaw_core::{AgentLoop, Config, MessageBus, PluginHost, PluginManifest, discover};
 use mochiclaw_sdk::channel::{LoginParams, LoginResponse, QrStatusParams, QrStatusResponse};
-
-/// Deserialize a value from MessagePack bytes
-fn from_msgpack<'a, T: serde::Deserialize<'a>>(buf: &'a [u8]) -> Option<T> {
-    T::deserialize(&mut Deserializer::new(Cursor::new(buf))).ok()
-}
-
-/// Serialize a value to MessagePack bytes
-fn to_msgpack<T: Serialize>(value: &T) -> Option<Vec<u8>> {
-    let mut buf = Vec::new();
-    value.serialize(&mut Serializer::new(&mut buf)).ok()?;
-    Some(buf)
-}
 
 pub async fn start(config_path: PathBuf) -> Result<()> {
     let config = Config::from_file(&config_path)?;
@@ -154,22 +139,7 @@ pub async fn login(plugin_name: &str, config_path: PathBuf) -> Result<()> {
     // Call login function with empty config
     let resp: LoginResponse = {
         let login_params = LoginParams { config: Vec::new() };
-        let params_bytes = to_msgpack(&login_params).unwrap_or_default();
-        let output = plugin_host.call(plugin_name, "login", &params_bytes)?;
-        match from_msgpack(&output) {
-            Some(r) => r,
-            None => {
-                // Fallback: try to parse as JSON for backwards compatibility
-                serde_json::from_str(&String::from_utf8_lossy(&output)).unwrap_or(LoginResponse {
-                    status: "error".to_string(),
-                    qr_url: None,
-                    temp_token: None,
-                    token: None,
-                    base_url: None,
-                    error: Some("failed to parse response".to_string()),
-                })
-            }
-        }
+        plugin_host.call(plugin_name, "login", &login_params)?
     };
 
     match resp.status.as_str() {
@@ -202,22 +172,7 @@ pub async fn login(plugin_name: &str, config_path: PathBuf) -> Result<()> {
                             let params = QrStatusParams {
                                 temp_token: temp_token.clone(),
                             };
-                            let params_bytes = to_msgpack(&params).unwrap_or_default();
-                            let output =
-                                plugin_host.call(plugin_name, "check_login", &params_bytes)?;
-                            match from_msgpack(&output) {
-                                Some(r) => r,
-                                None => {
-                                    // Fallback: try to parse as JSON for backwards compatibility
-                                    serde_json::from_str(&String::from_utf8_lossy(&output))
-                                        .unwrap_or(QrStatusResponse {
-                                            status: "error".to_string(),
-                                            token: None,
-                                            base_url: None,
-                                            error: Some("failed to parse response".to_string()),
-                                        })
-                                }
-                            }
+                            plugin_host.call(plugin_name, "check_login", &params)?
                         };
 
                         match check_resp.status.as_str() {

@@ -9,6 +9,7 @@ use crate::host::http::HttpContext;
 use crate::host::kv::PluginKV;
 use crate::manifest::PluginManifest;
 use extism::{CompiledPlugin, Manifest, Plugin, PluginBuilder, Pool, PoolBuilder, Wasm};
+use extism_convert::{FromBytesOwned, ToBytes};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -125,8 +126,26 @@ impl PluginHost {
         Ok(())
     }
 
-    /// Call a plugin function with MessagePack encoded input/output
-    pub fn call(&self, name: &str, function: &str, input: &[u8]) -> Result<Vec<u8>, Error> {
+    /// Call a plugin function with typed input/output, handling MessagePack serialization automatically.
+    ///
+    /// This is the preferred method for calling plugin functions - it handles
+    /// serialization of the input and deserialization of the output automatically.
+    ///
+    /// # Type Parameters
+    /// * `T` - Input type that implements `ToBytes` (e.g., types with `#[encoding(Msgpack)]`)
+    /// * `R` - Output type that implements `FromBytesOwned` (e.g., types with `#[encoding(Msgpack)]`)
+    ///
+    /// # Example
+    /// ```ignore
+    /// let request = ChatRequest { ... };
+    /// let response: ChatResponse = host.call("openai", "chat", &request)?;
+    /// ```
+    pub fn call<'a, T: ToBytes<'a>, R: FromBytesOwned>(
+        &self,
+        name: &str,
+        function: &str,
+        input: &'a T,
+    ) -> Result<R, Error> {
         let pool = self.pools.get(name)
             .ok_or_else(|| Error::Plugin(format!("plugin '{}' not found", name)))?;
 

@@ -4,7 +4,7 @@
 
 use base64::Engine;
 use extism_pdk::*;
-use mochiclaw_sdk::channel::{LoginParams, LoginResponse, PollParams, PollResponse, QrStatusParams, QrStatusResponse, SendResponse, SetTypingParams};
+use mochiclaw_sdk::channel::{LoginParams, LoginResponse, PollParams, PollResponse, QrStatusParams, QrStatusResponse, SendResponse, SendTextParams, SetTypingParams};
 use mochiclaw_sdk::host::http::HttpClient;
 use std::collections::HashMap;
 
