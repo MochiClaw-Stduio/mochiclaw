@@ -8,7 +8,6 @@ members = [
     "mochiclaw-cli",
     "plugins/mochiclaw-weixin",
     "plugins/mochiclaw-openai",
-    "plugins/mochiclaw-example-tool",
     "plugins/mochiclaw-fs",
     "plugin-tests/test-kv",
     "plugin-tests/test-random",
