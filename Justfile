@@ -6,6 +6,13 @@ build-native:
 build-plugin:
     cargo build --release --target wasm32-unknown-unknown -p mochiclaw-openai -p mochiclaw-weixin
 
+# Test native crates
+test-native:
+    cargo test -p mochiclaw-sdk -p mochiclaw-plugin -p mochiclaw-core
+
+# Test everything
+test: test-native
+
 # Copy built plugins to ./target/plugins directory
 setup-plugins:
     #!/bin/bash

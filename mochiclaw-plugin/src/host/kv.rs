@@ -503,3 +503,215 @@ pub fn kv_list_writable_fn(ctx: PluginKVContext) -> Function {
         },
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_kv() -> PluginKV {
+        PluginKV::new()
+    }
+
+    // =============================================================================
+    // PluginKV basic tests
+    // =============================================================================
+
+    #[test]
+    fn test_plugin_kv_new_is_empty() {
+        let kv = create_test_kv();
+        assert!(kv.get_raw("plugin_a", "key").is_none());
+    }
+
+    #[test]
+    fn test_plugin_kv_set_and_get_raw() {
+        let kv = create_test_kv();
+        kv.set_raw("plugin_a", "key1", vec![1, 2, 3]);
+
+        let value = kv.get_raw("plugin_a", "key1");
+        assert_eq!(value, Some(vec![1, 2, 3]));
+    }
+
+    #[test]
+    fn test_plugin_kv_get_nonexistent_key() {
+        let kv = create_test_kv();
+        kv.set_raw("plugin_a", "key1", vec![1, 2, 3]);
+
+        let value = kv.get_raw("plugin_a", "nonexistent");
+        assert_eq!(value, None);
+    }
+
+    #[test]
+    fn test_plugin_kv_get_nonexistent_plugin() {
+        let kv = create_test_kv();
+        kv.set_raw("plugin_a", "key1", vec![1, 2, 3]);
+
+        let value = kv.get_raw("plugin_b", "key1");
+        assert_eq!(value, None);
+    }
+
+    #[test]
+    fn test_plugin_kv_remove_existing() {
+        let kv = create_test_kv();
+        kv.set_raw("plugin_a", "key1", vec![1, 2, 3]);
+        assert_eq!(kv.get_raw("plugin_a", "key1"), Some(vec![1, 2, 3]));
+
+        kv.remove("plugin_a", "key1");
+        assert_eq!(kv.get_raw("plugin_a", "key1"), None);
+    }
+
+    #[test]
+    fn test_plugin_kv_remove_nonexistent() {
+        let kv = create_test_kv();
+        kv.remove("plugin_a", "nonexistent"); // should not panic
+    }
+
+    #[test]
+    fn test_plugin_kv_remove_from_nonexistent_plugin() {
+        let kv = create_test_kv();
+        kv.set_raw("plugin_a", "key1", vec![1, 2, 3]);
+        kv.remove("plugin_b", "key1"); // different plugin, should not affect plugin_a
+        assert_eq!(kv.get_raw("plugin_a", "key1"), Some(vec![1, 2, 3]));
+    }
+
+    #[test]
+    fn test_plugin_kv_multiple_plugins_isolated() {
+        let kv = create_test_kv();
+        kv.set_raw("plugin_a", "key1", vec![1]);
+        kv.set_raw("plugin_b", "key1", vec![2]);
+        kv.set_raw("plugin_a", "key2", vec![3]);
+
+        assert_eq!(kv.get_raw("plugin_a", "key1"), Some(vec![1]));
+        assert_eq!(kv.get_raw("plugin_b", "key1"), Some(vec![2]));
+        assert_eq!(kv.get_raw("plugin_a", "key2"), Some(vec![3]));
+        assert_eq!(kv.get_raw("plugin_b", "key2"), None);
+    }
+
+    #[test]
+    fn test_plugin_kv_same_key_overwrites() {
+        let kv = create_test_kv();
+        kv.set_raw("plugin_a", "key1", vec![1, 2, 3]);
+        kv.set_raw("plugin_a", "key1", vec![4, 5, 6]);
+
+        let value = kv.get_raw("plugin_a", "key1");
+        assert_eq!(value, Some(vec![4, 5, 6]));
+    }
+
+    // =============================================================================
+    // PluginKV serialization tests (set/get with typed values)
+    // =============================================================================
+
+    #[test]
+    fn test_plugin_kv_set_get_string() {
+        let kv = create_test_kv();
+        kv.set("plugin_a", "name", &"Alice");
+
+        let value: Option<String> = kv.get("plugin_a", "name");
+        assert_eq!(value, Some("Alice".to_string()));
+    }
+
+    #[test]
+    fn test_plugin_kv_set_get_u64() {
+        let kv = create_test_kv();
+        kv.set("plugin_a", "count", &42u64);
+
+        let value: Option<u64> = kv.get("plugin_a", "count");
+        assert_eq!(value, Some(42));
+    }
+
+    #[test]
+    fn test_plugin_kv_set_get_struct() {
+        let kv = create_test_kv();
+
+        #[derive(Serialize, Deserialize, Debug, PartialEq)]
+        struct UserData {
+            name: String,
+            age: u32,
+        }
+
+        let user = UserData {
+            name: "Bob".to_string(),
+            age: 30,
+        };
+        kv.set("plugin_a", "user", &user);
+
+        let retrieved: Option<UserData> = kv.get("plugin_a", "user");
+        assert_eq!(retrieved, Some(user));
+    }
+
+    // =============================================================================
+    // PluginKVContext permission tests
+    // =============================================================================
+
+    #[test]
+    fn test_plugin_kv_context_can_read_self() {
+        let kv = Arc::new(create_test_kv());
+        let ctx = PluginKVContext::new(kv, "my_plugin", vec![]);
+
+        assert!(ctx.can_read("my_plugin"));
+    }
+
+    #[test]
+    fn test_plugin_kv_context_can_read_allowed() {
+        let kv = Arc::new(create_test_kv());
+        let ctx = PluginKVContext::new(
+            kv,
+            "my_plugin",
+            vec!["plugin_a".to_string(), "plugin_b".to_string()],
+        );
+
+        assert!(ctx.can_read("plugin_a"));
+        assert!(ctx.can_read("plugin_b"));
+    }
+
+    #[test]
+    fn test_plugin_kv_context_cannot_read_unlisted() {
+        let kv = Arc::new(create_test_kv());
+        let ctx = PluginKVContext::new(kv, "my_plugin", vec!["plugin_a".to_string()]);
+
+        assert!(!ctx.can_read("plugin_b"));
+        assert!(!ctx.can_read("other_plugin"));
+    }
+
+    #[test]
+    fn test_plugin_kv_context_clone_is_independent() {
+        let kv = Arc::new(create_test_kv());
+        let ctx1 = PluginKVContext::new(kv.clone(), "plugin_a", vec![]);
+        let ctx2 = ctx1.clone();
+
+        // Both should work independently
+        assert_eq!(ctx1.plugin_name, "plugin_a");
+        assert_eq!(ctx2.plugin_name, "plugin_a");
+    }
+
+    // =============================================================================
+    // PluginKV concurrency safety (Send + Sync)
+    // =============================================================================
+
+    #[test]
+    fn test_plugin_kv_is_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<PluginKV>();
+    }
+
+    #[test]
+    fn test_plugin_kv_is_sync() {
+        fn assert_sync<T: Sync>() {}
+        assert_sync::<PluginKV>();
+    }
+
+    #[test]
+    fn test_plugin_kv_context_is_send() {
+        fn assert_send<T: Send>() {}
+        let kv = Arc::new(create_test_kv());
+        let _ctx = PluginKVContext::new(kv, "test", vec![]);
+        assert_send::<PluginKVContext>();
+    }
+
+    #[test]
+    fn test_plugin_kv_context_is_sync() {
+        fn assert_sync<T: Sync>() {}
+        let kv = Arc::new(create_test_kv());
+        let _ctx = PluginKVContext::new(kv, "test", vec![]);
+        assert_sync::<PluginKVContext>();
+    }
+}

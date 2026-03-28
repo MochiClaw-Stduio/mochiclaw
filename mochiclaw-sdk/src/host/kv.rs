@@ -294,3 +294,145 @@ pub fn kv_list_writable() -> Option<Vec<String>> {
 
     from_msgpack(&output_bytes)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rmp_serde::Serializer;
+
+    /// Test msgpack serialization roundtrip for various types
+    #[test]
+    fn test_msgpack_roundtrip_string() {
+        let value = "hello world";
+        let serialized = to_msgpack(&value).unwrap();
+        let deserialized: String = from_msgpack(&serialized).unwrap();
+        assert_eq!(value, deserialized);
+    }
+
+    #[test]
+    fn test_msgpack_roundtrip_u64() {
+        let value: u64 = 12345678901234567890;
+        let serialized = to_msgpack(&value).unwrap();
+        let deserialized: u64 = from_msgpack(&serialized).unwrap();
+        assert_eq!(value, deserialized);
+    }
+
+    #[test]
+    fn test_msgpack_roundtrip_vec_u8() {
+        let value: Vec<u8> = vec![1, 2, 3, 4, 5, 255, 0];
+        let serialized = to_msgpack(&value).unwrap();
+        let deserialized: Vec<u8> = from_msgpack(&serialized).unwrap();
+        assert_eq!(value, deserialized);
+    }
+
+    #[test]
+    fn test_msgpack_roundtrip_option_vec_u8_some() {
+        let value: Option<Vec<u8>> = Some(vec![1, 2, 3]);
+        let mut buf = Vec::new();
+        value.serialize(&mut Serializer::new(&mut buf)).unwrap();
+        let deserialized: Option<Vec<u8>> = from_msgpack(&buf).unwrap();
+        assert_eq!(value, deserialized);
+    }
+
+    #[test]
+    fn test_msgpack_roundtrip_option_vec_u8_none() {
+        let value: Option<Vec<u8>> = None;
+        let mut buf = Vec::new();
+        value.serialize(&mut Serializer::new(&mut buf)).unwrap();
+        let deserialized: Option<Vec<u8>> = from_msgpack(&buf).unwrap();
+        assert_eq!(value, deserialized);
+    }
+
+    #[test]
+    fn test_kv_get_input_serialization() {
+        // Test with plugin = None (read from self)
+        let input = KVGetInput {
+            plugin: None,
+            key: "test_key".to_string(),
+        };
+        let serialized = to_msgpack(&input).unwrap();
+        let deserialized: KVGetInput = from_msgpack(&serialized).unwrap();
+        assert_eq!(input.plugin, deserialized.plugin);
+        assert_eq!(input.key, deserialized.key);
+
+        // Test with plugin = Some (read from other)
+        let input = KVGetInput {
+            plugin: Some("other_plugin".to_string()),
+            key: "test_key".to_string(),
+        };
+        let serialized = to_msgpack(&input).unwrap();
+        let deserialized: KVGetInput = from_msgpack(&serialized).unwrap();
+        assert_eq!(input.plugin, deserialized.plugin);
+        assert_eq!(input.key, deserialized.key);
+    }
+
+    #[test]
+    fn test_kv_set_input_serialization() {
+        let input = KVSetInput {
+            key: "my_key".to_string(),
+            value: vec![1, 2, 3, 4],
+        };
+        let serialized = to_msgpack(&input).unwrap();
+        let deserialized: KVSetInput = from_msgpack(&serialized).unwrap();
+        assert_eq!(input.key, deserialized.key);
+        assert_eq!(input.value, deserialized.value);
+    }
+
+    #[test]
+    fn test_kv_remove_input_serialization() {
+        let input = KVRemoveInput {
+            key: "to_delete".to_string(),
+        };
+        let serialized = to_msgpack(&input).unwrap();
+        let deserialized: KVRemoveInput = from_msgpack(&serialized).unwrap();
+        assert_eq!(input.key, deserialized.key);
+    }
+
+    #[test]
+    fn test_nested_serialization() {
+        // Simulate storing a struct in KV
+        #[derive(Serialize, Deserialize, Debug, PartialEq)]
+        struct UserData {
+            name: String,
+            age: u32,
+        }
+
+        let user = UserData {
+            name: "Alice".to_string(),
+            age: 30,
+        };
+
+        // Wrap in Option<Vec<u8>>
+        let wrapped: Option<Vec<u8>> = to_msgpack(&user);
+        let wrapped_bytes = wrapped.unwrap();
+
+        // Deserialize back
+        let unwrapped: Option<UserData> = from_msgpack(&wrapped_bytes);
+        let user_back = unwrapped.unwrap();
+
+        assert_eq!(user, user_back);
+    }
+
+    #[test]
+    fn test_empty_key_handling() {
+        let input = KVGetInput {
+            plugin: None,
+            key: "".to_string(),
+        };
+        let serialized = to_msgpack(&input).unwrap();
+        let deserialized: KVGetInput = from_msgpack(&serialized).unwrap();
+        assert_eq!(input.key, deserialized.key);
+    }
+
+    #[test]
+    fn test_empty_plugin_means_self() {
+        let input = KVGetInput {
+            plugin: Some("".to_string()),
+            key: "test".to_string(),
+        };
+        let serialized = to_msgpack(&input).unwrap();
+        let deserialized: KVGetInput = from_msgpack(&serialized).unwrap();
+        // Empty string plugin should be preserved (host decides what it means)
+        assert_eq!(input.plugin, deserialized.plugin);
+    }
+}
