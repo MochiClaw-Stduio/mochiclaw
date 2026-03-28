@@ -2,6 +2,7 @@
 
 use crate::bus::MessageBus;
 use crate::commands::{CommandRegistry, parse_command};
+use crate::context::ContextBuilder;
 use crate::error::Error;
 use crate::session::SessionManager;
 use mochiclaw_config::{ChannelConfig, Config, ModelConfig};
@@ -28,6 +29,8 @@ pub struct AgentLoop {
     sessions: Mutex<SessionManager>,
     /// Command registry for slash commands
     commands: CommandRegistry,
+    /// Context builder for system prompts
+    context_builder: ContextBuilder,
 }
 
 impl AgentLoop {
@@ -75,6 +78,8 @@ impl AgentLoop {
             model_config.provider
         );
 
+        let sessions_dir = workspace.join("sessions");
+
         Self {
             bus,
             plugin_host,
@@ -82,8 +87,9 @@ impl AgentLoop {
             max_iterations: config.agent.max_iterations,
             channel_configs,
             poll_state: tokio::sync::Mutex::new(HashMap::new()),
-            sessions: Mutex::new(SessionManager::new(workspace.join("sessions"))),
+            sessions: Mutex::new(SessionManager::new(sessions_dir)),
             commands: CommandRegistry::new(),
+            context_builder: ContextBuilder::new(workspace, None),
         }
     }
 
@@ -265,12 +271,23 @@ impl AgentLoop {
         let history = {
             let mut sessions = self.sessions.lock().unwrap();
             let session = sessions.get_or_create(&session_key);
-            session.add_message("user", &msg.content);
             session.get_history(500)
         };
 
-        // Build chat messages from history
-        let chat_messages: Vec<Message> = history
+        // Build messages with system prompt using ContextBuilder
+        let media_ref: Option<&[String]> = if msg.media.is_empty() { None } else { Some(&msg.media) };
+        let context_messages = self.context_builder.build_messages(
+            &history,
+            &msg.content,
+            None,
+            media_ref,
+            Some(&msg.channel),
+            Some(&msg.chat_id),
+            "user",
+        );
+
+        // Convert to provider messages
+        let chat_messages: Vec<Message> = context_messages
             .into_iter()
             .map(|m| Message {
                 role: match m.role.as_str() {
@@ -313,10 +330,11 @@ impl AgentLoop {
             response.chars().take(100).collect::<String>()
         );
 
-        // Add assistant response to session and save
+        // Add messages to session and save
         {
             let mut sessions = self.sessions.lock().unwrap();
             let session = sessions.get_or_create(&session_key);
+            session.add_message("user", &msg.content);
             session.add_message("assistant", &response);
             if let Err(e) = sessions.save(&session_key) {
                 tracing::warn!("failed to save session: {}", e);

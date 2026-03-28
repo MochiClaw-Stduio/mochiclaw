@@ -5,12 +5,14 @@
 pub mod agent;
 pub mod bus;
 pub mod commands;
+pub mod context;
 pub mod error;
 pub mod session;
 
 pub use agent::AgentLoop;
 pub use bus::MessageBus;
 pub use commands::{CommandRegistry, parse_command};
+pub use context::ContextBuilder;
 pub use error::Error;
 pub use session::{Session, SessionManager, Message};
 
