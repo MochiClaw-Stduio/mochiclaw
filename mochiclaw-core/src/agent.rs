@@ -7,7 +7,9 @@ use crate::error::Error;
 use crate::session::SessionManager;
 use mochiclaw_config::{ChannelConfig, Config, ModelConfig};
 use mochiclaw_plugin::PluginHost;
-use mochiclaw_sdk::channel::{PollParams, PollResponse, SendResponse, SendTextParams, SetTypingParams};
+use mochiclaw_sdk::channel::{
+    PollParams, PollResponse, SendResponse, SendTextParams, SetTypingParams,
+};
 use mochiclaw_sdk::message::InboundMessage;
 use mochiclaw_sdk::provider::{ChatRequest, ChatResponse, Message, MessageRole};
 use mochiclaw_sdk::tool::{Tool, ToolExecutionResponse};
@@ -355,7 +357,11 @@ impl AgentLoop {
         };
 
         // Build messages with system prompt using ContextBuilder
-        let media_ref: Option<&[String]> = if msg.media.is_empty() { None } else { Some(&msg.media) };
+        let media_ref: Option<&[String]> = if msg.media.is_empty() {
+            None
+        } else {
+            Some(&msg.media)
+        };
         let context_messages = self.context_builder.build_messages(
             &history,
             &msg.content,
@@ -486,14 +492,12 @@ impl AgentLoop {
                 } else {
                     format!(
                         r#"{{"tool_call_id": "{}", "name": "{}", "content": {}}}"#,
-                        tool_call.id,
-                        tool_name,
-                        tool_response.result
+                        tool_call.id, tool_name, tool_response.result
                     )
                 };
 
                 chat_messages.push(Message {
-                    role: MessageRole::User,  // Tool results use "user" role in OpenAI format
+                    role: MessageRole::User, // Tool results use "user" role in OpenAI format
                     content: tool_result_content,
                 });
 

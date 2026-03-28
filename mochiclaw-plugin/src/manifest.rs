@@ -1,10 +1,10 @@
 //! Plugin manifest schema
 
+use crate::error::Error as PluginError;
+use mochiclaw_config::plugin::CapabilitiesOverride;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
-use crate::error::Error as PluginError;
-use mochiclaw_config::plugin::CapabilitiesOverride;
 
 /// Plugin manifest - declares plugin metadata and capabilities
 #[derive(Debug, Clone, Deserialize)]
@@ -203,11 +203,13 @@ pub struct Features {
 impl PluginManifest {
     /// Load manifest from a TOML file
     pub fn from_file(path: &Path) -> Result<Self, PluginError> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| PluginError::Manifest(format!("failed to read {}: {}", path.display(), e)))?;
+        let content = std::fs::read_to_string(path).map_err(|e| {
+            PluginError::Manifest(format!("failed to read {}: {}", path.display(), e))
+        })?;
 
-        toml::from_str(&content)
-            .map_err(|e| PluginError::Manifest(format!("failed to parse {}: {}", path.display(), e)))
+        toml::from_str(&content).map_err(|e| {
+            PluginError::Manifest(format!("failed to parse {}: {}", path.display(), e))
+        })
     }
 }
 
@@ -312,7 +314,10 @@ mod tests {
         let overrides = CapabilitiesOverride {
             network: Some(NetworkCapabilitiesOverride {
                 enabled: None,
-                allowed_hosts: Some(vec!["user.api.com".to_string(), "another.api.com".to_string()]),
+                allowed_hosts: Some(vec![
+                    "user.api.com".to_string(),
+                    "another.api.com".to_string(),
+                ]),
                 denied_hosts: None,
             }),
             fs: None,
@@ -322,11 +327,10 @@ mod tests {
         let result = manifest.merge_with(&overrides);
 
         assert!(result.network.enabled);
-        assert_eq!(result.network.allowed_hosts, vec![
-            "api.manifest.com",
-            "user.api.com",
-            "another.api.com",
-        ]);
+        assert_eq!(
+            result.network.allowed_hosts,
+            vec!["api.manifest.com", "user.api.com", "another.api.com",]
+        );
     }
 
     #[test]
@@ -364,7 +368,10 @@ mod tests {
 
         let result = manifest.merge_with(&overrides);
 
-        assert_eq!(result.network.denied_hosts, vec!["evil.manifest.com", "user.denied.com"]);
+        assert_eq!(
+            result.network.denied_hosts,
+            vec!["evil.manifest.com", "user.denied.com"]
+        );
     }
 
     #[test]
@@ -485,8 +492,14 @@ mod tests {
 
         let result = manifest.merge_with(&overrides);
 
-        assert_eq!(result.fs.read_whitelist, vec!["/manifest/read", "/user/read"]);
-        assert_eq!(result.fs.write_whitelist, vec!["/manifest/write", "/user/write"]);
+        assert_eq!(
+            result.fs.read_whitelist,
+            vec!["/manifest/read", "/user/read"]
+        );
+        assert_eq!(
+            result.fs.write_whitelist,
+            vec!["/manifest/write", "/user/write"]
+        );
     }
 
     #[test]
@@ -526,7 +539,10 @@ mod tests {
 
         let result = manifest.merge_with(&overrides);
 
-        assert_eq!(result.allowed_kv_read, vec!["plugin-a", "plugin-b", "plugin-c"]);
+        assert_eq!(
+            result.allowed_kv_read,
+            vec!["plugin-a", "plugin-b", "plugin-c"]
+        );
     }
 
     #[test]
@@ -571,14 +587,26 @@ mod tests {
 
         // Network
         assert!(!result.network.enabled);
-        assert_eq!(result.network.allowed_hosts, vec!["api.manifest.com", "new.host.com"]);
-        assert_eq!(result.network.denied_hosts, vec!["evil.manifest.com", "new.denied.com"]);
+        assert_eq!(
+            result.network.allowed_hosts,
+            vec!["api.manifest.com", "new.host.com"]
+        );
+        assert_eq!(
+            result.network.denied_hosts,
+            vec!["evil.manifest.com", "new.denied.com"]
+        );
 
         // FS
         assert!(result.fs.enabled);
         assert_eq!(result.fs.allowed_root, "/new/root");
-        assert_eq!(result.fs.read_whitelist, vec!["/manifest/read", "/new/read"]);
-        assert_eq!(result.fs.write_whitelist, vec!["/manifest/write", "/new/write"]);
+        assert_eq!(
+            result.fs.read_whitelist,
+            vec!["/manifest/read", "/new/read"]
+        );
+        assert_eq!(
+            result.fs.write_whitelist,
+            vec!["/manifest/write", "/new/write"]
+        );
         assert_eq!(result.fs.read_blacklist, vec!["/new/blacklist"]);
         assert_eq!(result.fs.write_blacklist, vec!["/new/write-blacklist"]);
 

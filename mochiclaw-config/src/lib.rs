@@ -53,8 +53,8 @@ impl Config {
 
     /// Parse configuration from TOML string
     pub fn from_toml(toml: &str) -> Result<Self, ConfigError> {
-        let mut config: Config =
-            toml::from_str(toml).map_err(|e| ConfigError::Parse(format!("failed to parse config: {}", e)))?;
+        let mut config: Config = toml::from_str(toml)
+            .map_err(|e| ConfigError::Parse(format!("failed to parse config: {}", e)))?;
         config.migrate()?;
         Ok(config)
     }
@@ -91,8 +91,9 @@ impl Config {
 
     /// Save configuration to a TOML file
     pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
-        let content = toml::to_string_pretty(self)
-            .map_err(|e| ConfigError::Serialization(format!("failed to serialize config: {}", e)))?;
+        let content = toml::to_string_pretty(self).map_err(|e| {
+            ConfigError::Serialization(format!("failed to serialize config: {}", e))
+        })?;
         std::fs::write(path, content)
             .map_err(|e| ConfigError::Io(format!("failed to write {}: {}", path.display(), e)))
     }

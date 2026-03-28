@@ -16,9 +16,7 @@ pub async fn start(config: Config, config_path: PathBuf) -> Result<()> {
 
     // Clean up old log files if max_age_days is configured
     if let Some(max_age_days) = config.runtime.log.max_age_days {
-        if let Some(log_dir) =
-            resolve_log_dir(config.runtime.log.dir.as_deref(), &config_path)
-        {
+        if let Some(log_dir) = resolve_log_dir(config.runtime.log.dir.as_deref(), &config_path) {
             cleanup_old_logs(&log_dir, max_age_days);
         }
     }
@@ -54,9 +52,18 @@ pub async fn start(config: Config, config_path: PathBuf) -> Result<()> {
         let mut host = plugin_host.lock().await;
         for plugin in discovered {
             // Get per-plugin config if configured
-            let plugin_config = config.plugins.get(&plugin.name).cloned().unwrap_or_default();
+            let plugin_config = config
+                .plugins
+                .get(&plugin.name)
+                .cloned()
+                .unwrap_or_default();
 
-            match host.load_plugin(&plugin.name, &plugin.wasm_path, &plugin.manifest, &plugin_config) {
+            match host.load_plugin(
+                &plugin.name,
+                &plugin.wasm_path,
+                &plugin.manifest,
+                &plugin_config,
+            ) {
                 Ok(()) => {}
                 Err(e) => {
                     tracing::warn!("failed to load plugin: {}", e);

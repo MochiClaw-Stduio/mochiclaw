@@ -100,7 +100,14 @@ impl Session {
     }
 
     /// Add a message with full fields (for tool results etc)
-    pub fn add_message_full(&mut self, role: &str, content: &str, tool_calls: Option<Vec<ToolCall>>, tool_call_id: Option<String>, name: Option<String>) {
+    pub fn add_message_full(
+        &mut self,
+        role: &str,
+        content: &str,
+        tool_calls: Option<Vec<ToolCall>>,
+        tool_call_id: Option<String>,
+        name: Option<String>,
+    ) {
         let msg = Message {
             role: role.to_string(),
             content: content.to_string(),
@@ -232,13 +239,18 @@ impl Session {
 fn chrono_now() -> String {
     // Use time crate for consistent formatting
     let now = time::OffsetDateTime::now_utc();
-    now.format(&time::format_description::parse("[year]-[month]-[day]T[hour]:[minute]:[second]Z").unwrap())
-        .unwrap_or_else(|_| {
-            // Fallback to manual format
-            let (year, month, day) = (now.year() as u16, now.month() as u8, now.day());
-            let (hour, minute, second) = (now.hour(), now.minute(), now.second());
-            format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", year, month, day, hour, minute, second)
-        })
+    now.format(
+        &time::format_description::parse("[year]-[month]-[day]T[hour]:[minute]:[second]Z").unwrap(),
+    )
+    .unwrap_or_else(|_| {
+        // Fallback to manual format
+        let (year, month, day) = (now.year() as u16, now.month() as u8, now.day());
+        let (hour, minute, second) = (now.hour(), now.minute(), now.second());
+        format!(
+            "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+            year, month, day, hour, minute, second
+        )
+    })
 }
 
 /// Make a filename safe by replacing unsafe characters
@@ -309,7 +321,9 @@ impl SessionManager {
         }
 
         // Load from disk or create new
-        let session = self.load(key).unwrap_or_else(|| Session::new(key.to_string()));
+        let session = self
+            .load(key)
+            .unwrap_or_else(|| Session::new(key.to_string()));
 
         // Insert into cache
         self.cache.insert(key.to_string(), session);
@@ -385,13 +399,16 @@ impl SessionManager {
 
     /// Save a session to disk by key
     pub fn save(&mut self, key: &str) -> Result<(), Error> {
-        let session = self.cache.get(key)
+        let session = self
+            .cache
+            .get(key)
             .ok_or_else(|| Error::Session(format!("session not found: {}", key)))?;
 
         let path = self.session_path(&session.key);
 
-        let file = fs::File::create(&path)
-            .map_err(|e| Error::Session(format!("failed to create session file {:?}: {}", path, e)))?;
+        let file = fs::File::create(&path).map_err(|e| {
+            Error::Session(format!("failed to create session file {:?}: {}", path, e))
+        })?;
 
         let mut writer = std::io::BufWriter::new(file);
 
@@ -417,7 +434,8 @@ impl SessionManager {
                 .map_err(|e| Error::Session(format!("failed to write message: {}", e)))?;
         }
 
-        writer.flush()
+        writer
+            .flush()
             .map_err(|e| Error::Session(format!("failed to flush writer: {}", e)))?;
 
         Ok(())
@@ -449,7 +467,8 @@ impl SessionManager {
                 if reader.read_line(&mut first_line).is_ok() {
                     if let Ok(val) = serde_json::from_str::<serde_json::Value>(first_line.trim()) {
                         if val.get("_type").and_then(|v| v.as_str()) == Some("metadata") {
-                            let key = val.get("key")
+                            let key = val
+                                .get("key")
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string())
                                 .unwrap_or_else(|| {
@@ -461,8 +480,12 @@ impl SessionManager {
 
                             sessions.push(SessionInfo {
                                 key,
-                                created_at: val.get("created_at").and_then(|v| v.as_str().map(String::from)),
-                                updated_at: val.get("updated_at").and_then(|v| v.as_str().map(String::from)),
+                                created_at: val
+                                    .get("created_at")
+                                    .and_then(|v| v.as_str().map(String::from)),
+                                updated_at: val
+                                    .get("updated_at")
+                                    .and_then(|v| v.as_str().map(String::from)),
                                 path: path.to_string_lossy().to_string(),
                             });
                         }

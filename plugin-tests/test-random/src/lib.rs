@@ -2,9 +2,9 @@
 //!
 //! This plugin exposes functions to test host random operations.
 
-use mochiclaw_sdk::{plugin_fn, FnResult};
+use mochiclaw_sdk::host::random::{rand_bytes, rand_u32, rand_u64};
+use mochiclaw_sdk::{FnResult, plugin_fn};
 use serde::{Deserialize, Serialize};
-use mochiclaw_sdk::host::random::{rand_u32, rand_u64, rand_bytes};
 
 /// Test result structure
 #[derive(Serialize, Deserialize)]

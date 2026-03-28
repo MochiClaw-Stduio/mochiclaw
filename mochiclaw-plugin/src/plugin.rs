@@ -105,7 +105,10 @@ impl PluginHost {
         }
 
         // Determine effective proxy: per-plugin proxy_url > fallback_proxy_url
-        let effective_proxy = config.proxy_url.clone().or_else(|| self.fallback_proxy_url.clone());
+        let effective_proxy = config
+            .proxy_url
+            .clone()
+            .or_else(|| self.fallback_proxy_url.clone());
         tracing::debug!(
             "loading plugin '{}', effective_proxy={:?}",
             name,
@@ -113,12 +116,11 @@ impl PluginHost {
         );
 
         // Build host functions builder (always includes rand + KV)
-        let mut builder = crate::host::HostFunctionsBuilder::new()
-            .with_kv(
-                self.kv.clone(),
-                name,
-                capabilities.allowed_kv_read.clone(),
-            );
+        let mut builder = crate::host::HostFunctionsBuilder::new().with_kv(
+            self.kv.clone(),
+            name,
+            capabilities.allowed_kv_read.clone(),
+        );
 
         // Add HTTP functions if network is enabled
         if capabilities.network.enabled {
@@ -134,24 +136,44 @@ impl PluginHost {
 
         // Add FS functions if fs is enabled
         if capabilities.fs.enabled {
-            let workspace = self
-                .workspace
-                .clone()
-                .unwrap_or_else(|| ".".to_string());
+            let workspace = self.workspace.clone().unwrap_or_else(|| ".".to_string());
 
             // Resolve ${workspace} placeholder in allowed_root
             let allowed_root = if capabilities.fs.allowed_root.is_empty() {
                 workspace.clone()
             } else {
-                capabilities.fs.allowed_root.replace("${workspace}", &workspace)
+                capabilities
+                    .fs
+                    .allowed_root
+                    .replace("${workspace}", &workspace)
             };
 
             let fs_context = FsContext::new(
                 allowed_root.into(),
-                capabilities.fs.read_whitelist.iter().map(PathBuf::from).collect(),
-                capabilities.fs.write_whitelist.iter().map(PathBuf::from).collect(),
-                capabilities.fs.read_blacklist.iter().map(PathBuf::from).collect(),
-                capabilities.fs.write_blacklist.iter().map(PathBuf::from).collect(),
+                capabilities
+                    .fs
+                    .read_whitelist
+                    .iter()
+                    .map(PathBuf::from)
+                    .collect(),
+                capabilities
+                    .fs
+                    .write_whitelist
+                    .iter()
+                    .map(PathBuf::from)
+                    .collect(),
+                capabilities
+                    .fs
+                    .read_blacklist
+                    .iter()
+                    .map(PathBuf::from)
+                    .collect(),
+                capabilities
+                    .fs
+                    .write_blacklist
+                    .iter()
+                    .map(PathBuf::from)
+                    .collect(),
             );
             builder = builder.with_fs(fs_context);
         }

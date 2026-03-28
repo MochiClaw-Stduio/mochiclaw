@@ -103,7 +103,8 @@ pub fn fs_read(path: &str, workspace: &str, offset: u64, limit: u64) -> Result<S
     let input_bytes = to_msgpack(&input).ok_or("Failed to serialize input")?;
 
     // Allocate memory for input
-    let input_mem = Memory::from_bytes(&input_bytes).map_err(|e| format!("Failed to allocate memory: {}", e))?;
+    let input_mem = Memory::from_bytes(&input_bytes)
+        .map_err(|e| format!("Failed to allocate memory: {}", e))?;
     let input_offset = input_mem.offset();
 
     // Call host_fs_read - returns memory offset to MessagePack encoded response
@@ -112,7 +113,8 @@ pub fn fs_read(path: &str, workspace: &str, offset: u64, limit: u64) -> Result<S
         return Err("fs_read failed: invalid response".to_string());
     }
 
-    let output_mem = Memory::find(output_offset).ok_or("fs_read failed: could not find output memory")?;
+    let output_mem =
+        Memory::find(output_offset).ok_or("fs_read failed: could not find output memory")?;
     let output_bytes = output_mem.to_vec();
 
     from_msgpack(&output_bytes).ok_or_else(|| "Failed to deserialize output".to_string())
@@ -138,7 +140,8 @@ pub fn fs_write(path: &str, workspace: &str, content: &str) -> Result<bool, Stri
     let input_bytes = to_msgpack(&input).ok_or("Failed to serialize input")?;
 
     // Allocate memory for input
-    let input_mem = Memory::from_bytes(&input_bytes).map_err(|e| format!("Failed to allocate memory: {}", e))?;
+    let input_mem = Memory::from_bytes(&input_bytes)
+        .map_err(|e| format!("Failed to allocate memory: {}", e))?;
     let input_offset = input_mem.offset();
 
     // Call host_fs_write - returns 0 for success, 1 for failure (raw i32, not memory offset)
@@ -181,7 +184,8 @@ pub fn fs_edit(
     let input_bytes = to_msgpack(&input).ok_or("Failed to serialize input")?;
 
     // Allocate memory for input
-    let input_mem = Memory::from_bytes(&input_bytes).map_err(|e| format!("Failed to allocate memory: {}", e))?;
+    let input_mem = Memory::from_bytes(&input_bytes)
+        .map_err(|e| format!("Failed to allocate memory: {}", e))?;
     let input_offset = input_mem.offset();
 
     // Call host_fs_edit - returns memory offset to MessagePack encoded response
@@ -190,7 +194,8 @@ pub fn fs_edit(
         return Err("fs_edit failed: invalid response".to_string());
     }
 
-    let output_mem = Memory::find(output_offset).ok_or("fs_edit failed: could not find output memory")?;
+    let output_mem =
+        Memory::find(output_offset).ok_or("fs_edit failed: could not find output memory")?;
     let output_bytes = output_mem.to_vec();
 
     from_msgpack(&output_bytes).ok_or_else(|| "Failed to deserialize output".to_string())
@@ -223,7 +228,8 @@ pub fn fs_list(
     let input_bytes = to_msgpack(&input).ok_or("Failed to serialize input")?;
 
     // Allocate memory for input
-    let input_mem = Memory::from_bytes(&input_bytes).map_err(|e| format!("Failed to allocate memory: {}", e))?;
+    let input_mem = Memory::from_bytes(&input_bytes)
+        .map_err(|e| format!("Failed to allocate memory: {}", e))?;
     let input_offset = input_mem.offset();
 
     // Call host_fs_list - returns memory offset to MessagePack encoded response
@@ -232,7 +238,8 @@ pub fn fs_list(
         return Err("fs_list failed: invalid response".to_string());
     }
 
-    let output_mem = Memory::find(output_offset).ok_or("fs_list failed: could not find output memory")?;
+    let output_mem =
+        Memory::find(output_offset).ok_or("fs_list failed: could not find output memory")?;
     let output_bytes = output_mem.to_vec();
 
     from_msgpack(&output_bytes).ok_or_else(|| "Failed to deserialize output".to_string())

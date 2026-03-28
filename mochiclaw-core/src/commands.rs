@@ -64,19 +64,17 @@ impl CommandRegistry {
     where
         F: Fn(&str, &str, &str) -> Option<String> + Send + Sync + 'static,
     {
-        self.commands
-            .insert(name.to_lowercase(), (Arc::new(handler), CommandInfo::new(description)));
+        self.commands.insert(
+            name.to_lowercase(),
+            (Arc::new(handler), CommandInfo::new(description)),
+        );
     }
 
     /// Execute a built-in command by name
-    pub fn execute(
-        &self,
-        channel: &str,
-        chat_id: &str,
-        name: &str,
-        args: &str,
-    ) -> Option<String> {
-        self.commands.get(name).and_then(|(h, _)| h(channel, chat_id, args))
+    pub fn execute(&self, channel: &str, chat_id: &str, name: &str, args: &str) -> Option<String> {
+        self.commands
+            .get(name)
+            .and_then(|(h, _)| h(channel, chat_id, args))
     }
 
     /// List all registered commands with their descriptions (sorted by name)
@@ -144,7 +142,10 @@ mod tests {
         registry.register("foo", "foo description", |_, _, _| Some("bar".to_string()));
         assert!(registry.has_command("foo"));
         assert!(!registry.has_command("unknown"));
-        assert_eq!(registry.execute("c", "u", "foo", ""), Some("bar".to_string()));
+        assert_eq!(
+            registry.execute("c", "u", "foo", ""),
+            Some("bar".to_string())
+        );
         assert_eq!(registry.execute("c", "u", "unknown", ""), None);
     }
 

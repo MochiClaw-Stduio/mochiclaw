@@ -2,8 +2,8 @@
 //!
 //! This plugin exposes functions to test host filesystem operations.
 
-use mochiclaw_sdk::{plugin_fn, FnResult};
-use mochiclaw_sdk::host::fs::{fs_read, fs_write, fs_edit, fs_list};
+use mochiclaw_sdk::host::fs::{fs_edit, fs_list, fs_read, fs_write};
+use mochiclaw_sdk::{FnResult, plugin_fn};
 use serde::{Deserialize, Serialize};
 
 /// Test result structure
@@ -116,7 +116,11 @@ pub fn test_fs_edit_all(_params: String) -> FnResult<String> {
                     let success = content.contains("qux bar qux baz qux");
                     let result = TestResult {
                         success,
-                        message: if success { "replace_all ok".to_string() } else { content },
+                        message: if success {
+                            "replace_all ok".to_string()
+                        } else {
+                            content
+                        },
                     };
                     Ok(serde_json::to_string(&result).unwrap_or_default())
                 }

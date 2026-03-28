@@ -142,7 +142,10 @@ fn http_request_fn(ctx: Arc<Mutex<HttpContext>>) -> Function {
         [ValType::I64, ValType::I64],
         [ValType::I64],
         UserData::new(()),
-        move |plugin: &mut CurrentPlugin, inputs: &[Val], outputs: &mut [Val], _user_data: UserData<()>| {
+        move |plugin: &mut CurrentPlugin,
+              inputs: &[Val],
+              outputs: &mut [Val],
+              _user_data: UserData<()>| {
             let mut ctx = match ctx.lock() {
                 Ok(guard) => guard,
                 Err(_) => {
@@ -295,7 +298,10 @@ fn http_headers_fn(ctx: Arc<Mutex<HttpContext>>) -> Function {
         [],
         [ValType::I64],
         UserData::new(()),
-        move |plugin: &mut CurrentPlugin, _: &[Val], outputs: &mut [Val], _user_data: UserData<()>| {
+        move |plugin: &mut CurrentPlugin,
+              _: &[Val],
+              outputs: &mut [Val],
+              _user_data: UserData<()>| {
             let ctx = match ctx.lock() {
                 Ok(guard) => guard,
                 Err(_) => {
@@ -366,7 +372,11 @@ mod integration_tests {
             let result: String = plugin.call("test_http_get", "").unwrap();
             let result: TestResult = serde_json::from_str(&result).unwrap();
             assert!(result.success, "HTTP GET failed: {}", result.message);
-            assert!(result.message.contains("status=200"), "Expected status 200: {}", result.message);
+            assert!(
+                result.message.contains("status=200"),
+                "Expected status 200: {}",
+                result.message
+            );
         });
     }
 
@@ -376,7 +386,11 @@ mod integration_tests {
             let result: String = plugin.call("test_http_post", "").unwrap();
             let result: TestResult = serde_json::from_str(&result).unwrap();
             assert!(result.success, "HTTP POST failed: {}", result.message);
-            assert!(result.message.contains("status=200"), "Expected status 200: {}", result.message);
+            assert!(
+                result.message.contains("status=200"),
+                "Expected status 200: {}",
+                result.message
+            );
         });
     }
 
@@ -386,7 +400,11 @@ mod integration_tests {
             let result: String = plugin.call("test_http_put", "").unwrap();
             let result: TestResult = serde_json::from_str(&result).unwrap();
             assert!(result.success, "HTTP PUT failed: {}", result.message);
-            assert!(result.message.contains("status=200"), "Expected status 200: {}", result.message);
+            assert!(
+                result.message.contains("status=200"),
+                "Expected status 200: {}",
+                result.message
+            );
         });
     }
 
@@ -396,7 +414,11 @@ mod integration_tests {
             let result: String = plugin.call("test_http_delete", "").unwrap();
             let result: TestResult = serde_json::from_str(&result).unwrap();
             assert!(result.success, "HTTP DELETE failed: {}", result.message);
-            assert!(result.message.contains("status=200"), "Expected status 200: {}", result.message);
+            assert!(
+                result.message.contains("status=200"),
+                "Expected status 200: {}",
+                result.message
+            );
         });
     }
 
@@ -405,7 +427,11 @@ mod integration_tests {
         run_plugin_with_http(|plugin: &mut Plugin| {
             let result: String = plugin.call("test_http_headers", "").unwrap();
             let result: TestResult = serde_json::from_str(&result).unwrap();
-            assert!(result.success, "HTTP headers test failed: {}", result.message);
+            assert!(
+                result.success,
+                "HTTP headers test failed: {}",
+                result.message
+            );
         });
     }
 
@@ -414,8 +440,16 @@ mod integration_tests {
         run_plugin_with_http(|plugin: &mut Plugin| {
             let result: String = plugin.call("test_http_status", "").unwrap();
             let result: TestResult = serde_json::from_str(&result).unwrap();
-            assert!(result.success, "HTTP status test failed: {}", result.message);
-            assert!(result.message.contains("status=418"), "Expected status 418: {}", result.message);
+            assert!(
+                result.success,
+                "HTTP status test failed: {}",
+                result.message
+            );
+            assert!(
+                result.message.contains("status=418"),
+                "Expected status 418: {}",
+                result.message
+            );
         });
     }
 }

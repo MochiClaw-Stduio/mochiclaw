@@ -1,6 +1,6 @@
 //! Tool definition for agent tool calling
 
-use extism_convert::{FromBytes, ToBytes, Msgpack};
+use extism_convert::{FromBytes, Msgpack, ToBytes};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

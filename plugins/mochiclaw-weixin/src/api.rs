@@ -3,9 +3,12 @@
 //! HTTP client and API methods for WeChat iLink HTTP API.
 
 use base64::Engine;
-use mochiclaw_sdk::{plugin_fn, FnResult, debug, error, info};
-use mochiclaw_sdk::channel::{LoginParams, LoginResponse, PollParams, PollResponse, QrStatusParams, QrStatusResponse, SendResponse, SendTextParams, SetTypingParams};
+use mochiclaw_sdk::channel::{
+    LoginParams, LoginResponse, PollParams, PollResponse, QrStatusParams, QrStatusResponse,
+    SendResponse, SendTextParams, SetTypingParams,
+};
 use mochiclaw_sdk::host::http::HttpClient;
+use mochiclaw_sdk::{FnResult, debug, error, info, plugin_fn};
 use std::collections::HashMap;
 
 use crate::constants::*;

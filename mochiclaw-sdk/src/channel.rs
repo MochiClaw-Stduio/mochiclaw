@@ -3,8 +3,8 @@
 //! Common request/response types for channel plugins (e.g., WeChat, Telegram, Discord).
 //! These types are channel-agnostic and can be reused across different channel implementations.
 
+use extism_convert::{FromBytes, Msgpack, ToBytes};
 use serde::{Deserialize, Serialize};
-use extism_convert::{FromBytes, ToBytes, Msgpack};
 
 use crate::message::InboundMessage;
 

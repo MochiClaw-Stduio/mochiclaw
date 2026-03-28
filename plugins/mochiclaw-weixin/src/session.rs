@@ -5,7 +5,7 @@
 //!
 //! This enables multiple Pool instances to share state correctly.
 
-use mochiclaw_sdk::host::kv::{kv_get, kv_set, kv_remove};
+use mochiclaw_sdk::host::kv::{kv_get, kv_remove, kv_set};
 
 /// KV key for route tag (plugin-level, not user-specific)
 const KEY_ROUTE_TAG: &str = "route_tag";
@@ -18,8 +18,7 @@ const KEY_TYPING_TICKET_PREFIX: &str = "typing_ticket";
 
 /// Get the current route tag (stored during login, used for all API calls)
 pub fn get_route_tag() -> String {
-    kv_get::<String>(KEY_ROUTE_TAG)
-        .unwrap_or_default()
+    kv_get::<String>(KEY_ROUTE_TAG).unwrap_or_default()
 }
 
 /// Set the route tag for API requests (called during login)

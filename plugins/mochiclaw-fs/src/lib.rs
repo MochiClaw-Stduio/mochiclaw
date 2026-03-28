@@ -4,9 +4,9 @@
 
 use std::collections::HashMap;
 
-use mochiclaw_sdk::{plugin_fn, FnResult, config};
 use mochiclaw_sdk::host::fs;
 use mochiclaw_sdk::tool::{Tool, ToolExecutionRequest, ToolExecutionResponse};
+use mochiclaw_sdk::{FnResult, config, plugin_fn};
 
 /// Return the list of tools provided by this plugin
 #[plugin_fn]
@@ -173,11 +173,16 @@ fn make_write_file_tool() -> Tool {
             }
         }),
     );
-    params.insert("required".to_string(), serde_json::json!(["path", "content"]));
+    params.insert(
+        "required".to_string(),
+        serde_json::json!(["path", "content"]),
+    );
 
     Tool {
         name: "write_file".to_string(),
-        description: "Write content to a file at the given path. Creates parent directories if needed.".to_string(),
+        description:
+            "Write content to a file at the given path. Creates parent directories if needed."
+                .to_string(),
         parameters: params,
     }
 }

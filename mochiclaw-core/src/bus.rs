@@ -3,7 +3,7 @@
 use crate::error::Error;
 use mochiclaw_sdk::message::{InboundMessage, OutboundMessage};
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 /// MessageBus handles all inter-component messaging
 pub struct MessageBus {

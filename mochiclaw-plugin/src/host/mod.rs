@@ -8,8 +8,8 @@ pub mod http;
 pub mod kv;
 pub mod random;
 
-pub use fs::{fs_functions, FsContext};
-pub use http::{http_functions, HttpContext};
+pub use fs::{FsContext, fs_functions};
+pub use http::{HttpContext, http_functions};
 pub use kv::{PluginKV, kv_functions};
 pub use random::rand_functions;
 
@@ -23,7 +23,11 @@ pub struct HostFunctionsBuilder {
 
 impl HostFunctionsBuilder {
     pub fn new() -> Self {
-        Self { kv: None, http: None, fs: None }
+        Self {
+            kv: None,
+            http: None,
+            fs: None,
+        }
     }
 
     pub fn with_kv(

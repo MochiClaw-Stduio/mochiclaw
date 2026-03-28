@@ -2,7 +2,7 @@
 
 use super::types::Message;
 use crate::tool::Tool;
-use extism_convert::{FromBytes, ToBytes, Msgpack};
+use extism_convert::{FromBytes, Msgpack, ToBytes};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

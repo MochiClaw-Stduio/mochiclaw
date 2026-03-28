@@ -35,10 +35,7 @@ pub fn discover(plugin_dir: &Path) -> Result<Vec<DiscoveredPlugin>, std::io::Err
             continue;
         }
 
-        let plugin_name = match entry_path
-            .file_name()
-            .and_then(|n| n.to_str())
-        {
+        let plugin_name = match entry_path.file_name().and_then(|n| n.to_str()) {
             Some(n) => n,
             None => continue,
         };
@@ -54,9 +51,15 @@ pub fn discover(plugin_dir: &Path) -> Result<Vec<DiscoveredPlugin>, std::io::Err
         };
 
         // Check if this plugin should be loaded
-        if !manifest.features.provider && !manifest.features.channel
-           && !manifest.features.command && !manifest.features.tool {
-            tracing::debug!("skipping '{}': not a channel, provider, command, or tool", plugin_name);
+        if !manifest.features.provider
+            && !manifest.features.channel
+            && !manifest.features.command
+            && !manifest.features.tool
+        {
+            tracing::debug!(
+                "skipping '{}': not a channel, provider, command, or tool",
+                plugin_name
+            );
             continue;
         }
 
@@ -64,7 +67,11 @@ pub fn discover(plugin_dir: &Path) -> Result<Vec<DiscoveredPlugin>, std::io::Err
         let wasm_path = entry_path.join(format!("{}.wasm", plugin_name));
 
         if !wasm_path.exists() {
-            tracing::debug!("skipping '{}': no wasm found at {}", plugin_name, wasm_path.display());
+            tracing::debug!(
+                "skipping '{}': no wasm found at {}",
+                plugin_name,
+                wasm_path.display()
+            );
             continue;
         }
 

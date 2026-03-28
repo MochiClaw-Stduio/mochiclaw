@@ -37,3 +37,11 @@ setup-plugins:
 
 # Build everything
 build: build-native build-plugin setup-plugins
+
+# Format code
+fmt:
+    cargo fmt
+
+# Lint code
+lint:
+    cargo clippy --all-targets --all-features -- -D warnings

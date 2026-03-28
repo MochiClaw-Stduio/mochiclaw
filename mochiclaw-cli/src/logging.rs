@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
+use tracing_subscriber::{EnvFilter, Registry, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Build log level filter: RUST_LOG env > config value > default "info"
 pub fn build_log_filter(config_log_level: Option<&str>) -> EnvFilter {
@@ -48,7 +48,13 @@ pub fn setup_tracing(log_dir: Option<&str>, log_level: Option<&str>, config_dir:
         // Leak the guard to keep file logging alive for the duration of the program
         Box::leak(Box::new(guard));
 
-        subscriber.with(tracing_subscriber::fmt::layer().with_writer(non_blocking).with_ansi(false)).init();
+        subscriber
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_writer(non_blocking)
+                    .with_ansi(false),
+            )
+            .init();
     } else {
         subscriber.init();
     }

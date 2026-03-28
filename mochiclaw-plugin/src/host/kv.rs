@@ -124,7 +124,8 @@ impl PluginKVContext {
 
     /// Check if reading from target_plugin is allowed
     fn can_read(&self, target_plugin: &str) -> bool {
-        target_plugin == self.plugin_name || self.allowed_kv_read.contains(&target_plugin.to_string())
+        target_plugin == self.plugin_name
+            || self.allowed_kv_read.contains(&target_plugin.to_string())
     }
 }
 
@@ -215,16 +216,19 @@ pub fn kv_get_fn(ctx: PluginKVContext) -> Function {
             };
 
             // Decode input
-            let input: KVGetInput = match KVGetInput::deserialize(&mut Deserializer::new(Cursor::new(&bytes))) {
-                Ok(inp) => inp,
-                Err(_) => {
-                    outputs[0] = Val::I64(0);
-                    return Ok(());
-                }
-            };
+            let input: KVGetInput =
+                match KVGetInput::deserialize(&mut Deserializer::new(Cursor::new(&bytes))) {
+                    Ok(inp) => inp,
+                    Err(_) => {
+                        outputs[0] = Val::I64(0);
+                        return Ok(());
+                    }
+                };
 
             // Default to own plugin if not specified
-            let target_plugin = input.plugin.as_ref()
+            let target_plugin = input
+                .plugin
+                .as_ref()
                 .filter(|p| !p.is_empty())
                 .map(|p| p.as_str())
                 .unwrap_or(&ctx_guard.plugin_name);
@@ -246,7 +250,10 @@ pub fn kv_get_fn(ctx: PluginKVContext) -> Function {
             // Encode output as MessagePack Option<Vec<u8>>
             let output: Option<Vec<u8>> = value;
             let mut output_buf = Vec::new();
-            if output.serialize(&mut Serializer::new(&mut output_buf)).is_err() {
+            if output
+                .serialize(&mut Serializer::new(&mut output_buf))
+                .is_err()
+            {
                 outputs[0] = Val::I64(0);
                 return Ok(());
             }
@@ -316,16 +323,19 @@ pub fn kv_set_fn(ctx: PluginKVContext) -> Function {
             };
 
             // Decode input
-            let input: KVSetInput = match KVSetInput::deserialize(&mut Deserializer::new(Cursor::new(&bytes))) {
-                Ok(inp) => inp,
-                Err(_) => {
-                    outputs[0] = Val::I64(-1);
-                    return Ok(());
-                }
-            };
+            let input: KVSetInput =
+                match KVSetInput::deserialize(&mut Deserializer::new(Cursor::new(&bytes))) {
+                    Ok(inp) => inp,
+                    Err(_) => {
+                        outputs[0] = Val::I64(-1);
+                        return Ok(());
+                    }
+                };
 
             // Always writes to own KV
-            ctx_guard.kv.set_raw(&ctx_guard.plugin_name, &input.key, input.value);
+            ctx_guard
+                .kv
+                .set_raw(&ctx_guard.plugin_name, &input.key, input.value);
 
             outputs[0] = Val::I64(0);
             Ok(())
@@ -390,13 +400,14 @@ pub fn kv_remove_fn(ctx: PluginKVContext) -> Function {
             };
 
             // Decode input
-            let input: KVRemoveInput = match KVRemoveInput::deserialize(&mut Deserializer::new(Cursor::new(&bytes))) {
-                Ok(inp) => inp,
-                Err(_) => {
-                    outputs[0] = Val::I64(-1);
-                    return Ok(());
-                }
-            };
+            let input: KVRemoveInput =
+                match KVRemoveInput::deserialize(&mut Deserializer::new(Cursor::new(&bytes))) {
+                    Ok(inp) => inp,
+                    Err(_) => {
+                        outputs[0] = Val::I64(-1);
+                        return Ok(());
+                    }
+                };
 
             // Always removes from own KV
             ctx_guard.kv.remove(&ctx_guard.plugin_name, &input.key);
@@ -443,7 +454,10 @@ pub fn kv_list_readable_fn(ctx: PluginKVContext) -> Function {
             readable.extend(ctx_guard.allowed_kv_read.clone());
 
             let mut output_buf = Vec::new();
-            if readable.serialize(&mut Serializer::new(&mut output_buf)).is_err() {
+            if readable
+                .serialize(&mut Serializer::new(&mut output_buf))
+                .is_err()
+            {
                 outputs[0] = Val::I64(0);
                 return Ok(());
             }
@@ -491,7 +505,10 @@ pub fn kv_list_writable_fn(ctx: PluginKVContext) -> Function {
             let writable = vec![ctx_guard.plugin_name.clone()];
 
             let mut output_buf = Vec::new();
-            if writable.serialize(&mut Serializer::new(&mut output_buf)).is_err() {
+            if writable
+                .serialize(&mut Serializer::new(&mut output_buf))
+                .is_err()
+            {
                 outputs[0] = Val::I64(0);
                 return Ok(());
             }
@@ -719,20 +736,23 @@ mod tests {
 #[cfg(test)]
 mod integration_tests {
     use super::*;
-    use extism::{Plugin, Manifest, Wasm};
+    use extism::{Manifest, Plugin, Wasm};
     use std::sync::Arc;
 
     // WASM file for test-kv plugin
-    const TEST_KV_WASM: &[u8] = include_bytes!(
-        "../../../target/wasm32-unknown-unknown/release/test_kv.wasm"
-    );
+    const TEST_KV_WASM: &[u8] =
+        include_bytes!("../../../target/wasm32-unknown-unknown/release/test_kv.wasm");
 
     fn create_test_kv() -> PluginKV {
         PluginKV::new()
     }
 
-    fn run_plugin_with_kv<F>(kv: Arc<PluginKV>, plugin_name: &str, allowed_kv_read: Vec<String>, f: F)
-    where
+    fn run_plugin_with_kv<F>(
+        kv: Arc<PluginKV>,
+        plugin_name: &str,
+        allowed_kv_read: Vec<String>,
+        f: F,
+    ) where
         F: FnOnce(&mut Plugin),
     {
         let functions = kv_functions(kv, plugin_name, allowed_kv_read);
@@ -777,26 +797,36 @@ mod integration_tests {
     fn test_integration_kv_list_readable() {
         let kv = Arc::new(create_test_kv());
 
-        run_plugin_with_kv(kv, "my-plugin", vec!["other-plugin".to_string()], |plugin: &mut Plugin| {
-            // Call test_kv_list_readable
-            let result: String = plugin.call("test_kv_list_readable", "").unwrap();
-            let plugins: Vec<String> = serde_json::from_str(&result).unwrap();
-            // Should include self and allowed plugins
-            assert!(plugins.contains(&"my-plugin".to_string()));
-            assert!(plugins.contains(&"other-plugin".to_string()));
-        });
+        run_plugin_with_kv(
+            kv,
+            "my-plugin",
+            vec!["other-plugin".to_string()],
+            |plugin: &mut Plugin| {
+                // Call test_kv_list_readable
+                let result: String = plugin.call("test_kv_list_readable", "").unwrap();
+                let plugins: Vec<String> = serde_json::from_str(&result).unwrap();
+                // Should include self and allowed plugins
+                assert!(plugins.contains(&"my-plugin".to_string()));
+                assert!(plugins.contains(&"other-plugin".to_string()));
+            },
+        );
     }
 
     #[test]
     fn test_integration_kv_list_writable() {
         let kv = Arc::new(create_test_kv());
 
-        run_plugin_with_kv(kv, "my-plugin", vec!["other-plugin".to_string()], |plugin: &mut Plugin| {
-            // Call test_kv_list_writable
-            let result: String = plugin.call("test_kv_list_writable", "").unwrap();
-            let plugins: Vec<String> = serde_json::from_str(&result).unwrap();
-            // Should only include self (writes to other plugins not allowed)
-            assert_eq!(plugins, vec!["my-plugin"]);
-        });
+        run_plugin_with_kv(
+            kv,
+            "my-plugin",
+            vec!["other-plugin".to_string()],
+            |plugin: &mut Plugin| {
+                // Call test_kv_list_writable
+                let result: String = plugin.call("test_kv_list_writable", "").unwrap();
+                let plugins: Vec<String> = serde_json::from_str(&result).unwrap();
+                // Should only include self (writes to other plugins not allowed)
+                assert_eq!(plugins, vec!["my-plugin"]);
+            },
+        );
     }
 }

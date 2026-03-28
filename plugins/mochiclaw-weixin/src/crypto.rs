@@ -4,9 +4,9 @@
 //! and the `md-5` crate for MD5 hashing.
 
 use aes::Aes128;
-use cipher::{generic_array::GenericArray, BlockEncrypt, KeyInit};
+use cipher::{BlockEncrypt, KeyInit, generic_array::GenericArray};
 use generic_array::typenum::U16;
-use md5::{Md5, Digest};
+use md5::{Digest, Md5};
 
 type AesBlock = GenericArray<u8, U16>;
 

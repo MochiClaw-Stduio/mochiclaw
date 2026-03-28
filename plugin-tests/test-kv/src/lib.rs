@@ -2,8 +2,8 @@
 //!
 //! This plugin exposes functions to test host KV operations.
 
-use mochiclaw_sdk::{plugin_fn, FnResult};
 use mochiclaw_sdk::host::kv::{kv_get, kv_list_readable, kv_list_writable, kv_remove, kv_set};
+use mochiclaw_sdk::{FnResult, plugin_fn};
 use serde::{Deserialize, Serialize};
 
 /// Test result structure

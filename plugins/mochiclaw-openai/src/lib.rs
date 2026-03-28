@@ -5,10 +5,10 @@
 
 use std::collections::HashMap;
 
-use mochiclaw_sdk::{FromBytes, ToBytes, Msgpack, plugin_fn, FnResult};
 use mochiclaw_sdk::host::http::HttpClient;
 use mochiclaw_sdk::provider::{ChatRequest, ChatResponse, MessageRole, ToolCall};
 use mochiclaw_sdk::tool::Tool;
+use mochiclaw_sdk::{FnResult, FromBytes, Msgpack, ToBytes, plugin_fn};
 use serde::{Deserialize, Serialize};
 
 fn role_to_string(role: &MessageRole) -> &str {

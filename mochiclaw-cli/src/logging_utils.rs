@@ -52,7 +52,10 @@ pub fn resolve_log_dir(log_dir: Option<&str>, config_path: &PathBuf) -> Option<P
         if path.is_absolute() {
             path
         } else {
-            config_path.parent().unwrap_or(&PathBuf::from(".")).join(path)
+            config_path
+                .parent()
+                .unwrap_or(&PathBuf::from("."))
+                .join(path)
         }
     })
 }

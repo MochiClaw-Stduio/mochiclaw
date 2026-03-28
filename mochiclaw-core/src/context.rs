@@ -26,13 +26,19 @@ pub struct ContextBuilder {
 impl ContextBuilder {
     /// Create a new ContextBuilder with the given workspace path
     pub fn new(workspace: PathBuf, timezone: Option<String>) -> Self {
-        Self { workspace, timezone }
+        Self {
+            workspace,
+            timezone,
+        }
     }
 
     /// Release all template files to the workspace.
     /// This should be called at startup or during onboarding.
     pub fn release_templates(&self) {
-        tracing::info!("releasing templates to workspace: {}", self.workspace.display());
+        tracing::info!(
+            "releasing templates to workspace: {}",
+            self.workspace.display()
+        );
 
         // Ensure workspace directory exists
         if let Err(e) = std::fs::create_dir_all(&self.workspace) {
@@ -132,9 +138,7 @@ impl ContextBuilder {
             }
 
             if let Some(b64_image) = self._encode_image(path) {
-                content_items.push(ContentBlock::ImageUrl {
-                    url: b64_image.url,
-                });
+                content_items.push(ContentBlock::ImageUrl { url: b64_image.url });
             }
         }
 
@@ -168,10 +172,14 @@ impl ContextBuilder {
                 let items_json = items
                     .iter()
                     .map(|item| match item {
-                        ContentBlock::Text(t) => format!("{{\"type\":\"text\",\"text\":\"{}\"}}",
-                            t.replace('\\', "\\\\").replace('"', "\\\"")),
-                        ContentBlock::ImageUrl { url } => format!("{{\"type\":\"image_url\",\"image_url\":{{\"url\":\"{}\"}}}}",
-                            url.replace('\\', "\\\\").replace('"', "\\\"")),
+                        ContentBlock::Text(t) => format!(
+                            "{{\"type\":\"text\",\"text\":\"{}\"}}",
+                            t.replace('\\', "\\\\").replace('"', "\\\"")
+                        ),
+                        ContentBlock::ImageUrl { url } => format!(
+                            "{{\"type\":\"image_url\",\"image_url\":{{\"url\":\"{}\"}}}}",
+                            url.replace('\\', "\\\\").replace('"', "\\\"")
+                        ),
                     })
                     .collect::<Vec<_>>()
                     .join(",");
@@ -224,10 +232,7 @@ impl ContextBuilder {
     }
 
     /// Add an assistant message to the message list
-    pub fn add_assistant_message(
-        messages: &mut Vec<crate::session::Message>,
-        content: &str,
-    ) {
+    pub fn add_assistant_message(messages: &mut Vec<crate::session::Message>, content: &str) {
         messages.push(crate::session::Message {
             role: "assistant".to_string(),
             content: content.to_string(),
@@ -342,7 +347,8 @@ impl ContextBuilder {
                     let metadata_path = path.join("METADATA.toml");
                     let is_always_on = if metadata_path.is_file() {
                         if let Ok(metadata) = std::fs::read_to_string(&metadata_path) {
-                            metadata.contains("always = true") || metadata.contains("always_on = true")
+                            metadata.contains("always = true")
+                                || metadata.contains("always_on = true")
                         } else {
                             false
                         }
@@ -396,11 +402,12 @@ impl ContextBuilder {
 
                 if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                     // Check availability from METADATA.toml
-                    let available = if let Ok(metadata) = std::fs::read_to_string(path.join("METADATA.toml")) {
-                        !metadata.contains("available = false")
-                    } else {
-                        true // Default to available if no metadata
-                    };
+                    let available =
+                        if let Ok(metadata) = std::fs::read_to_string(path.join("METADATA.toml")) {
+                            !metadata.contains("available = false")
+                        } else {
+                            true // Default to available if no metadata
+                        };
 
                     let status = if available { "true" } else { "false" };
                     entries.push(format!("- **{}** (available={})", name, status));
@@ -433,22 +440,21 @@ impl ContextBuilder {
 
     fn _encode_image(&self, path: &Path) -> Option<ImageData> {
         let raw = std::fs::read(path).ok()?;
-        let mime = self._detect_image_mime(&raw)
-            .or_else(|| {
-                // Fallback to extension-based guessing
-                path.extension()
-                    .and_then(|ext| ext.to_str())
-                    .and_then(|ext| match ext.to_lowercase().as_str() {
-                        "png" => Some("image/png"),
-                        "jpg" | "jpeg" => Some("image/jpeg"),
-                        "gif" => Some("image/gif"),
-                        "webp" => Some("image/webp"),
-                        "svg" => Some("image/svg+xml"),
-                        "bmp" => Some("image/bmp"),
-                        _ => None,
-                    })
-                    .map(|s| s.to_string())
-            })?;
+        let mime = self._detect_image_mime(&raw).or_else(|| {
+            // Fallback to extension-based guessing
+            path.extension()
+                .and_then(|ext| ext.to_str())
+                .and_then(|ext| match ext.to_lowercase().as_str() {
+                    "png" => Some("image/png"),
+                    "jpg" | "jpeg" => Some("image/jpeg"),
+                    "gif" => Some("image/gif"),
+                    "webp" => Some("image/webp"),
+                    "svg" => Some("image/svg+xml"),
+                    "bmp" => Some("image/bmp"),
+                    _ => None,
+                })
+                .map(|s| s.to_string())
+        })?;
 
         if !mime.starts_with("image/") {
             return None;

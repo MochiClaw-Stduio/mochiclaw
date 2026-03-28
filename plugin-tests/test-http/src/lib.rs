@@ -2,8 +2,8 @@
 //!
 //! This plugin exposes functions to test host HTTP operations.
 
-use mochiclaw_sdk::{plugin_fn, FnResult};
 use mochiclaw_sdk::host::http::HttpClient;
+use mochiclaw_sdk::{FnResult, plugin_fn};
 use serde::{Deserialize, Serialize};
 
 /// Test result structure
@@ -179,8 +179,7 @@ pub fn test_http_headers(_params: String) -> FnResult<String> {
 #[plugin_fn]
 pub fn test_http_status(_params: String) -> FnResult<String> {
     // httpbin.org/status/418 returns a teapot response
-    let response = HttpClient::get("https://httpbin.org/status/418")
-        .send();
+    let response = HttpClient::get("https://httpbin.org/status/418").send();
 
     match response {
         Ok(resp) => {

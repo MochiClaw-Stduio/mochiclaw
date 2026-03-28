@@ -138,11 +138,7 @@ impl FsContext {
 
     /// Resolve a path with workspace context (for write operations).
     /// The file may not exist yet. We verify the final path stays within allowed_root.
-    fn resolve_path_for_write(
-        &self,
-        path: &Path,
-        workspace: &Path,
-    ) -> Result<PathBuf, String> {
+    fn resolve_path_for_write(&self, path: &Path, workspace: &Path) -> Result<PathBuf, String> {
         // Resolve workspace relative to allowed_root
         let resolved_workspace = if workspace.as_os_str().is_empty() {
             self.allowed_root.clone()
@@ -174,14 +170,17 @@ impl FsContext {
         // If it doesn't exist, try canonicalizing parent; if parent also doesn't exist,
         // use components to build the path (we'll create parent dirs in fs_write)
         let resolved_path = if joined.exists() {
-            joined.canonicalize()
+            joined
+                .canonicalize()
                 .map_err(|e| format!("Failed to resolve path: {}", e))?
         } else if let Some(parent) = joined.parent() {
             if parent.exists() {
                 // Parent exists, canonicalize it and append filename
-                let canonicalized_parent = parent.canonicalize()
+                let canonicalized_parent = parent
+                    .canonicalize()
                     .map_err(|e| format!("Failed to resolve parent directory: {}", e))?;
-                let filename = joined.file_name()
+                let filename = joined
+                    .file_name()
                     .ok_or_else(|| format!("Invalid path: no filename"))?;
                 canonicalized_parent.join(filename)
             } else {
@@ -473,7 +472,12 @@ pub fn fs_write_fn(ctx: FsContext) -> Function {
             {
                 Ok(p) => p,
                 Err(e) => {
-                    tracing::error!("fs_write path resolution failed: path={}, workspace={}, error={}", input.path, input.workspace, e);
+                    tracing::error!(
+                        "fs_write path resolution failed: path={}, workspace={}, error={}",
+                        input.path,
+                        input.workspace,
+                        e
+                    );
                     outputs[0] = Val::I32(1);
                     return Ok(());
                 }

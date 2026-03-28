@@ -2,8 +2,11 @@
 //!
 //! Functions for parsing WeChat API responses and building request payloads.
 
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use mochiclaw_sdk::{host::{rand_bytes, rand_u32}, message::InboundMessage};
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+use mochiclaw_sdk::{
+    host::{rand_bytes, rand_u32},
+    message::InboundMessage,
+};
 use serde::Deserialize;
 use std::collections::HashMap;
 
