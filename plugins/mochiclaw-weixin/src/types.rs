@@ -110,7 +110,6 @@ pub struct GetConfigResponse {
 pub struct SendTypingParams {
     pub token: String,
     pub ilink_user_id: String,
-    pub typing_ticket: String,
     pub status: i32, // 1=start typing, 2=stop typing
 }
 
@@ -125,49 +124,21 @@ pub struct WeixinApiResponse {
     #[serde(default)]
     pub errcode: Option<i32>,
     #[serde(default)]
-    pub errmsg: Option<String>,
-    #[serde(default)]
     pub msgs: Vec<serde_json::Value>,
     #[serde(default)]
     pub get_updates_buf: String,
-    #[serde(default)]
-    pub longpolling_timeout_ms: Option<u64>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct QrCodeResponse {
-    pub qrcode: String,
-    #[serde(default)]
-    pub qrcode_img_content: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct QrStatusResponseInternal {
     pub status: String,
-    #[serde(default)]
     pub bot_token: String,
-    #[serde(default)]
     pub baseurl: String,
-    #[serde(default)]
-    pub ilink_bot_id: String,
-    #[serde(default)]
-    pub ilink_user_id: String,
-    #[serde(default)]
-    pub errmsg: String,
 }
 
 // ============================================================================
 // Result Types for Internal Use
 // ============================================================================
-
-#[derive(Debug, Serialize)]
-pub struct LoginResult {
-    pub status: String,
-    pub qr_url: Option<String>,
-    pub temp_token: Option<String>,
-    pub token: Option<String>,
-    pub base_url: Option<String>,
-}
 
 #[derive(Debug, Serialize)]
 pub struct QrStatusResult {

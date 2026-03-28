@@ -39,14 +39,6 @@ struct PollResponse {
     error: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct SendTextParams {
-    token: String,
-    to_user_id: String,
-    content: String,
-    context_token: String,
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 struct SendResponse {
     success: bool,
@@ -177,7 +169,7 @@ impl AgentLoop {
 
             // Call the channel plugin's poll function
             let result: Result<PollResponse, _> = {
-                let mut host = self.plugin_host.lock().await;
+                let host = self.plugin_host.lock().await;
                 let output = match host.call(channel_name, "poll", &poll_params.to_string()) {
                     Ok(o) => {
                         tracing::trace!(
@@ -293,10 +285,6 @@ impl AgentLoop {
 
         tracing::info!("processing message from {}: {}", msg.channel, msg.content);
 
-        // Send typing start indicator (best-effort, don't fail if it errors)
-        self.send_typing_indicator(&msg.channel, &msg.chat_id, 1)
-            .await;
-
         // Get or create session for this conversation
         let session_key = msg.session_key();
         let history = {
@@ -332,7 +320,7 @@ impl AgentLoop {
 
         // Call provider plugin
         let response = {
-            let mut host = self.plugin_host.lock().await;
+            let host = self.plugin_host.lock().await;
             let request_json = serde_json::to_string(&chat_request)
                 .map_err(|e| Error::Plugin(format!("failed to serialize chat request: {}", e)))?;
 
@@ -367,10 +355,6 @@ impl AgentLoop {
 
         self.send_to_channel(&msg.channel, &msg.chat_id, &response)
             .await?;
-
-        // Send typing stop indicator (best-effort, don't fail if it errors)
-        self.send_typing_indicator(&msg.channel, &msg.chat_id, 2)
-            .await;
 
         Ok(())
     }
@@ -410,7 +394,7 @@ impl AgentLoop {
             "content": content,
         });
 
-        let mut host = self.plugin_host.lock().await;
+        let host = self.plugin_host.lock().await;
         let output = host
             .call(channel_name, "send_text", &send_params.to_string())
             .map_err(|e| Error::Plugin(format!("send_text failed: {}", e)))?;
@@ -428,108 +412,5 @@ impl AgentLoop {
         }
 
         Ok(())
-    }
-
-    /// Send typing indicator (status 1=start, 2=stop) to a channel
-    async fn send_typing_indicator(&self, channel_name: &str, ilink_user_id: &str, status: i32) {
-        let typing_ticket = match self.get_typing_ticket(channel_name, ilink_user_id).await {
-            Some(ticket) => ticket,
-            None => {
-                tracing::debug!(
-                    "send_typing_indicator: no typing_ticket for {}",
-                    ilink_user_id
-                );
-                return;
-            }
-        };
-
-        let token = match self.channel_configs.get(channel_name) {
-            Some(cfg) => cfg.extra.get("token").and_then(|v| v.as_str()),
-            None => {
-                tracing::warn!(
-                    "send_typing_indicator: no token for channel {}",
-                    channel_name
-                );
-                return;
-            }
-        };
-
-        let token = match token {
-            Some(t) => t,
-            None => return,
-        };
-
-        let typing_params = serde_json::json!({
-            "token": token,
-            "ilink_user_id": ilink_user_id,
-            "typing_ticket": typing_ticket,
-            "status": status,
-        });
-
-        let mut host = self.plugin_host.lock().await;
-
-        if let Err(e) = host.call(channel_name, "send_typing", &typing_params.to_string()) {
-            tracing::debug!("send_typing_indicator failed: {}", e);
-        }
-    }
-
-    /// Get typing_ticket for a user, fetching from get_config if not cached
-    async fn get_typing_ticket(&self, channel_name: &str, ilink_user_id: &str) -> Option<String> {
-        // TODO: Cache typing_tickets per user (24h TTL)
-        // For now, fetch from get_config each time
-
-        let token = match self.channel_configs.get(channel_name) {
-            Some(cfg) => cfg.extra.get("token").and_then(|v| v.as_str()),
-            None => return None,
-        };
-
-        let token = match token {
-            Some(t) => t,
-            None => return None,
-        };
-
-        // Get context_token for this user (needed for getConfig)
-        // We don't have direct access to the plugin's context_token cache from here
-        // For now, call get_config without context_token and see if it works
-        let get_config_params = serde_json::json!({
-            "token": token,
-            "ilink_user_id": ilink_user_id,
-            "context_token": "",
-        });
-
-        let mut host = self.plugin_host.lock().await;
-
-        let output: String =
-            match host.call(channel_name, "get_config", &get_config_params.to_string()) {
-                Ok(o) => o,
-                Err(e) => {
-                    tracing::debug!("get_config failed: {}", e);
-                    return None;
-                }
-            };
-
-        #[derive(Deserialize)]
-        struct GetConfigResponse {
-            success: bool,
-            typing_ticket: String,
-            #[serde(default)]
-            error: Option<String>,
-        }
-
-        match serde_json::from_str::<GetConfigResponse>(&output) {
-            Ok(resp) => {
-                if resp.success {
-                    tracing::debug!("get_config: got typing_ticket for {}", ilink_user_id);
-                    Some(resp.typing_ticket)
-                } else {
-                    tracing::debug!("get_config failed: {:?}", resp.error);
-                    None
-                }
-            }
-            Err(e) => {
-                tracing::debug!("get_config parse failed: {}", e);
-                None
-            }
-        }
     }
 }

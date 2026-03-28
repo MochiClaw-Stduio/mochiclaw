@@ -631,9 +631,24 @@ pub fn send_typing(params_json: String) -> FnResult<String> {
 
     let route_tag = get_route_tag();
 
+    // Get typing_ticket from cache, or fetch via get_config if not cached
+    let typing_ticket = match crate::session::get_typing_ticket(&params.ilink_user_id) {
+        Some(ticket) => ticket,
+        None => {
+            // Fetch typing_ticket via get_config
+            match fetch_typing_ticket(&params.token, &params.ilink_user_id, &route_tag) {
+                Ok(ticket) => ticket,
+                Err(e) => {
+                    error!("send_typing: failed to get typing_ticket: {}", e);
+                    return Ok("{}".to_string());
+                }
+            }
+        }
+    };
+
     let full_body = serde_json::json!({
         "ilink_user_id": params.ilink_user_id,
-        "typing_ticket": params.typing_ticket,
+        "typing_ticket": typing_ticket,
         "status": params.status,
         "base_info": { "channel_version": CHANNEL_VERSION }
     });
@@ -650,6 +665,26 @@ pub fn send_typing(params_json: String) -> FnResult<String> {
             // Typing is best-effort, don't fail
             Ok("{}".to_string())
         }
+    }
+}
+
+/// Internal helper to fetch typing_ticket via get_config API
+fn fetch_typing_ticket(token: &str, ilink_user_id: &str, route_tag: &str) -> Result<String, String> {
+    let body = serde_json::json!({
+        "ilink_user_id": ilink_user_id,
+        "context_token": "",
+        "base_info": { "channel_version": CHANNEL_VERSION }
+    });
+
+    let resp_text = api_post("ilink/bot/getconfig", token, body, route_tag)?;
+
+    match parse_get_config_response(&resp_text) {
+        Ok(typing_ticket) => {
+            // Cache the typing ticket for future use
+            cache_typing_ticket(ilink_user_id, &typing_ticket);
+            Ok(typing_ticket)
+        }
+        Err(e) => Err(e),
     }
 }
 

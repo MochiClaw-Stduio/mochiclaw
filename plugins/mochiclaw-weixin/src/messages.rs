@@ -399,16 +399,3 @@ pub fn build_media_message(
         "base_info": { "channel_version": CHANNEL_VERSION }
     })
 }
-
-/// Build a sendTyping request body
-pub fn build_send_typing(
-    ilink_user_id: &str,
-    typing_ticket: &str,
-    status: i32,
-) -> serde_json::Value {
-    serde_json::json!({
-        "ilink_user_id": ilink_user_id,
-        "typing_ticket": typing_ticket,
-        "status": status,
-    })
-}
