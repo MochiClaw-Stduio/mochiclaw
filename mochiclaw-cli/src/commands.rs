@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use mochiclaw_config::{ChannelConfig, Config};
-use mochiclaw_core::{AgentLoop, MessageBus, PluginHost, PluginManifest, discover};
+use mochiclaw_core::{AgentLoop, ContextBuilder, MessageBus, PluginHost, PluginManifest, discover};
 use mochiclaw_sdk::channel::{LoginParams, LoginResponse, QrStatusParams, QrStatusResponse};
 
 pub async fn start(config_path: PathBuf) -> Result<()> {
@@ -62,6 +62,10 @@ pub async fn start(config_path: PathBuf) -> Result<()> {
 
     // Create agent loop with workspace from config
     let workspace = config.workspace_path(&config_path);
+
+    // Release templates to workspace at startup
+    ContextBuilder::new(workspace.clone(), None).release_templates();
+
     let agent = AgentLoop::new(bus.clone(), plugin_host.clone(), &config, workspace);
 
     // Run agent
@@ -86,6 +90,11 @@ pub async fn onboard(config_path: PathBuf) -> Result<()> {
     let config = Config::default_for_onboarding();
     config.save(&config_path)?;
     println!("created default config at {}", config_path.display());
+
+    // Release templates to workspace
+    let workspace = config.workspace_path(&config_path);
+    ContextBuilder::new(workspace, None).release_templates();
+    println!("released templates to workspace");
 
     Ok(())
 }

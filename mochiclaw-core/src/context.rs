@@ -29,6 +29,54 @@ impl ContextBuilder {
         Self { workspace, timezone }
     }
 
+    /// Release all template files to the workspace.
+    /// This should be called at startup or during onboarding.
+    pub fn release_templates(&self) {
+        tracing::info!("releasing templates to workspace: {}", self.workspace.display());
+
+        // Ensure workspace directory exists
+        if let Err(e) = std::fs::create_dir_all(&self.workspace) {
+            tracing::warn!("failed to create workspace dir: {}", e);
+            return;
+        }
+
+        // Release bootstrap templates
+        for filename in &BOOTSTRAP_FILES {
+            let path = self.workspace.join(filename);
+            if !path.is_file() {
+                let content = match *filename {
+                    "AGENTS.md" => AGENTS_TEMPLATE,
+                    "SOUL.md" => SOUL_TEMPLATE,
+                    "USER.md" => USER_TEMPLATE,
+                    "TOOLS.md" => TOOLS_TEMPLATE,
+                    _ => continue,
+                };
+                match std::fs::write(&path, content) {
+                    Ok(()) => tracing::info!("created template: {}", path.display()),
+                    Err(e) => tracing::warn!("failed to create {}: {}", path.display(), e),
+                }
+            } else {
+                tracing::debug!("template already exists: {}", path.display());
+            }
+        }
+
+        // Release memory template
+        let memory_dir = self.workspace.join("memory");
+        let memory_path = memory_dir.join("MEMORY.md");
+        if !memory_path.is_file() {
+            if let Err(e) = std::fs::create_dir_all(&memory_dir) {
+                tracing::warn!("failed to create memory dir: {}", e);
+            } else {
+                match std::fs::write(&memory_path, MEMORY_TEMPLATE) {
+                    Ok(()) => tracing::info!("created template: {}", memory_path.display()),
+                    Err(e) => tracing::warn!("failed to create memory file: {}", e),
+                }
+            }
+        } else {
+            tracing::debug!("template already exists: {}", memory_path.display());
+        }
+    }
+
     /// Build the complete system prompt
     pub fn build_system_prompt(&self) -> String {
         let mut parts = vec![self._identity_section()];
