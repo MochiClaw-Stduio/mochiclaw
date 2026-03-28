@@ -606,28 +606,29 @@ pub fn get_config(params_json: String) -> FnResult<String> {
     }
 }
 
-/// Send typing indicator to a user
+/// Set typing indicator (generic interface for agent).
+/// typing=true means start typing, typing=false means stop typing.
 #[plugin_fn]
-pub fn send_typing(params_json: String) -> FnResult<String> {
-    let params: SendTypingParams = match serde_json::from_str(&params_json) {
+pub fn set_typing(params_json: String) -> FnResult<String> {
+    let params: SetTypingParams = match serde_json::from_str(&params_json) {
         Ok(p) => p,
         Err(e) => {
-            error!("send_typing: invalid params: {}", e);
+            error!("set_typing: invalid params: {}", e);
             return Ok("{}".to_string());
         }
     };
 
     let route_tag = get_route_tag();
+    let status = if params.typing { 1 } else { 2 };
 
     // Get typing_ticket from cache, or fetch via get_config if not cached
-    let typing_ticket = match crate::session::get_typing_ticket(&params.ilink_user_id) {
+    let typing_ticket = match crate::session::get_typing_ticket(&params.chat_id) {
         Some(ticket) => ticket,
         None => {
-            // Fetch typing_ticket via get_config
-            match fetch_typing_ticket(&params.token, &params.ilink_user_id, &route_tag) {
+            match fetch_typing_ticket(&params.token, &params.chat_id, &route_tag) {
                 Ok(ticket) => ticket,
                 Err(e) => {
-                    error!("send_typing: failed to get typing_ticket: {}", e);
+                    error!("set_typing: failed to get typing_ticket: {}", e);
                     return Ok("{}".to_string());
                 }
             }
@@ -635,21 +636,21 @@ pub fn send_typing(params_json: String) -> FnResult<String> {
     };
 
     let full_body = serde_json::json!({
-        "ilink_user_id": params.ilink_user_id,
+        "ilink_user_id": params.chat_id,
         "typing_ticket": typing_ticket,
-        "status": params.status,
+        "status": status,
         "base_info": { "channel_version": CHANNEL_VERSION }
     });
 
     info!(
-        "send_typing: ilink_user_id={}, status={}",
-        params.ilink_user_id, params.status
+        "set_typing: chat_id={}, typing={}",
+        params.chat_id, params.typing
     );
 
     match api_post("ilink/bot/sendtyping", &params.token, full_body, &route_tag) {
         Ok(_resp_text) => Ok("{}".to_string()),
         Err(e) => {
-            error!("send_typing: HTTP error: {}", e);
+            error!("set_typing: HTTP error: {}", e);
             // Typing is best-effort, don't fail
             Ok("{}".to_string())
         }

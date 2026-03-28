@@ -285,6 +285,9 @@ impl AgentLoop {
 
         tracing::info!("processing message from {}: {}", msg.channel, msg.content);
 
+        // Send typing start indicator (best-effort, non-blocking)
+        self.set_typing(&msg.channel, &msg.chat_id, true).await;
+
         // Get or create session for this conversation
         let session_key = msg.session_key();
         let history = {
@@ -356,6 +359,9 @@ impl AgentLoop {
         self.send_to_channel(&msg.channel, &msg.chat_id, &response)
             .await?;
 
+        // Send typing stop indicator (best-effort, non-blocking)
+        self.set_typing(&msg.channel, &msg.chat_id, false).await;
+
         Ok(())
     }
 
@@ -412,5 +418,34 @@ impl AgentLoop {
         }
 
         Ok(())
+    }
+
+    /// Set typing indicator on a channel.
+    /// typing=true means start, typing=false means stop.
+    /// This is best-effort - errors are ignored since not all plugins support it.
+    async fn set_typing(&self, channel_name: &str, chat_id: &str, typing: bool) {
+        let token = match self.channel_configs.get(channel_name) {
+            Some(cfg) => cfg.extra.get("token").and_then(|v| v.as_str()),
+            None => {
+                tracing::debug!("set_typing: no token for channel {}", channel_name);
+                return;
+            }
+        };
+
+        let token = match token {
+            Some(t) => t,
+            None => return,
+        };
+
+        let params = serde_json::json!({
+            "token": token,
+            "chat_id": chat_id,
+            "typing": typing,
+        });
+
+        let host = self.plugin_host.lock().await;
+        if let Err(e) = host.call(channel_name, "set_typing", &params.to_string()) {
+            tracing::debug!("set_typing not supported for {}: {}", channel_name, e);
+        }
     }
 }

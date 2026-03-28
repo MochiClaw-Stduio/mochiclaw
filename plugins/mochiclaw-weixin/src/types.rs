@@ -106,11 +106,12 @@ pub struct GetConfigResponse {
     pub error: Option<String>,
 }
 
+/// Parameters for set_typing (generic boolean interface)
 #[derive(Debug, Deserialize)]
-pub struct SendTypingParams {
+pub struct SetTypingParams {
     pub token: String,
-    pub ilink_user_id: String,
-    pub status: i32, // 1=start typing, 2=stop typing
+    pub chat_id: String,
+    pub typing: bool, // true=start typing, false=stop typing
 }
 
 // ============================================================================
