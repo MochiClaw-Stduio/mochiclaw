@@ -24,8 +24,11 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
+      - name: Install just
+        run: cargo install just --force
+
       - name: Lint
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: just lint
 
   test:
     name: Test
@@ -41,8 +44,8 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Build test plugins
-        run: cargo build --release --target wasm32-unknown-unknown -p test-kv -p test-random -p test-http -p test-fs
+      - name: Install just
+        run: cargo install just --force
 
       - name: Test native crates
-        run: cargo test -p mochiclaw-sdk -p mochiclaw-plugin -p mochiclaw-core
+        run: just test-native
