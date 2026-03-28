@@ -41,31 +41,32 @@ pub struct FsListInput {
 }
 
 /// Declare external host functions for FS operations (provided by mochiclaw-plugin)
-#[host_fn]
-extern "ExtismHost" {
+/// Note: we use raw FFI instead of #[host_fn] to avoid extism bug with non-pointer return types
+#[link(wasm_import_module = "extism:host/user")]
+unsafe extern "C" {
     /// Read a file
     ///
     /// Input: MessagePack encoded FsReadInput
     /// Output: MessagePack encoded String (file content or error message)
-    fn host_fs_read(input: Vec<u8>) -> Vec<u8>;
+    fn host_fs_read(input: u64) -> u64;
 
     /// Write a file
     ///
     /// Input: MessagePack encoded FsWriteInput
-    /// Output: i64 (0 = success, -1 = failed)
-    fn host_fs_write(input: Vec<u8>) -> i64;
+    /// Output: i32 (0 = success, 1 = failed)
+    fn host_fs_write(input: u64) -> i32;
 
     /// Edit a file
     ///
     /// Input: MessagePack encoded FsEditInput
     /// Output: MessagePack encoded String (success message or error)
-    fn host_fs_edit(input: Vec<u8>) -> Vec<u8>;
+    fn host_fs_edit(input: u64) -> u64;
 
     /// List directory contents
     ///
     /// Input: MessagePack encoded FsListInput
     /// Output: MessagePack encoded String (directory listing or error)
-    fn host_fs_list(input: Vec<u8>) -> Vec<u8>;
+    fn host_fs_list(input: u64) -> u64;
 }
 
 /// Serialize a value to a byte vector using MessagePack
@@ -101,8 +102,18 @@ pub fn fs_read(path: &str, workspace: &str, offset: u64, limit: u64) -> Result<S
 
     let input_bytes = to_msgpack(&input).ok_or("Failed to serialize input")?;
 
-    let output_bytes =
-        unsafe { host_fs_read(input_bytes) }.map_err(|e| format!("host_fs_read failed: {}", e))?;
+    // Allocate memory for input
+    let input_mem = Memory::from_bytes(&input_bytes).map_err(|e| format!("Failed to allocate memory: {}", e))?;
+    let input_offset = input_mem.offset();
+
+    // Call host_fs_read - returns memory offset to MessagePack encoded response
+    let output_offset = unsafe { host_fs_read(input_offset) };
+    if output_offset == 0 {
+        return Err("fs_read failed: invalid response".to_string());
+    }
+
+    let output_mem = Memory::find(output_offset).ok_or("fs_read failed: could not find output memory")?;
+    let output_bytes = output_mem.to_vec();
 
     from_msgpack(&output_bytes).ok_or_else(|| "Failed to deserialize output".to_string())
 }
@@ -126,11 +137,17 @@ pub fn fs_write(path: &str, workspace: &str, content: &str) -> Result<bool, Stri
 
     let input_bytes = to_msgpack(&input).ok_or("Failed to serialize input")?;
 
-    match unsafe { host_fs_write(input_bytes) } {
-        Ok(0) => Ok(true),
-        Ok(-1) => Err("Write failed".to_string()),
-        Ok(code) => Err(format!("Unexpected return code: {}", code)),
-        Err(e) => Err(format!("host_fs_write failed: {}", e)),
+    // Allocate memory for input
+    let input_mem = Memory::from_bytes(&input_bytes).map_err(|e| format!("Failed to allocate memory: {}", e))?;
+    let input_offset = input_mem.offset();
+
+    // Call host_fs_write - returns 0 for success, 1 for failure (raw i32, not memory offset)
+    let result = unsafe { host_fs_write(input_offset) };
+
+    match result {
+        0 => Ok(true),
+        1 => Err("Write failed".to_string()),
+        code => Err(format!("Unexpected return code: {}", code)),
     }
 }
 
@@ -163,8 +180,18 @@ pub fn fs_edit(
 
     let input_bytes = to_msgpack(&input).ok_or("Failed to serialize input")?;
 
-    let output_bytes =
-        unsafe { host_fs_edit(input_bytes) }.map_err(|e| format!("host_fs_edit failed: {}", e))?;
+    // Allocate memory for input
+    let input_mem = Memory::from_bytes(&input_bytes).map_err(|e| format!("Failed to allocate memory: {}", e))?;
+    let input_offset = input_mem.offset();
+
+    // Call host_fs_edit - returns memory offset to MessagePack encoded response
+    let output_offset = unsafe { host_fs_edit(input_offset) };
+    if output_offset == 0 {
+        return Err("fs_edit failed: invalid response".to_string());
+    }
+
+    let output_mem = Memory::find(output_offset).ok_or("fs_edit failed: could not find output memory")?;
+    let output_bytes = output_mem.to_vec();
 
     from_msgpack(&output_bytes).ok_or_else(|| "Failed to deserialize output".to_string())
 }
@@ -195,8 +222,18 @@ pub fn fs_list(
 
     let input_bytes = to_msgpack(&input).ok_or("Failed to serialize input")?;
 
-    let output_bytes =
-        unsafe { host_fs_list(input_bytes) }.map_err(|e| format!("host_fs_list failed: {}", e))?;
+    // Allocate memory for input
+    let input_mem = Memory::from_bytes(&input_bytes).map_err(|e| format!("Failed to allocate memory: {}", e))?;
+    let input_offset = input_mem.offset();
+
+    // Call host_fs_list - returns memory offset to MessagePack encoded response
+    let output_offset = unsafe { host_fs_list(input_offset) };
+    if output_offset == 0 {
+        return Err("fs_list failed: invalid response".to_string());
+    }
+
+    let output_mem = Memory::find(output_offset).ok_or("fs_list failed: could not find output memory")?;
+    let output_bytes = output_mem.to_vec();
 
     from_msgpack(&output_bytes).ok_or_else(|| "Failed to deserialize output".to_string())
 }

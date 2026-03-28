@@ -11,6 +11,8 @@ members = [
     "plugins/mochiclaw-fs",
     "plugin-tests/test-kv",
     "plugin-tests/test-random",
+    "plugin-tests/test-http",
+    "plugin-tests/test-fs",
 ]
 
 [workspace.package]

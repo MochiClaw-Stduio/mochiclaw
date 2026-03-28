@@ -321,3 +321,101 @@ fn http_headers_fn(ctx: Arc<Mutex<HttpContext>>) -> Function {
         },
     )
 }
+
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
+    use extism::{Manifest, Plugin, Wasm};
+    use serde::Deserialize;
+
+    // WASM file for test-http plugin
+    const TEST_HTTP_WASM: &[u8] =
+        include_bytes!("../../../target/wasm32-unknown-unknown/release/test_http.wasm");
+
+    fn create_test_context() -> HttpContext {
+        HttpContext::new(
+            None,
+            vec!["httpbin.org".to_string(), "https://httpbin.org".to_string()],
+            vec![],
+            false,
+        )
+        .unwrap()
+    }
+
+    fn run_plugin_with_http<F>(f: F)
+    where
+        F: FnOnce(&mut Plugin),
+    {
+        let ctx = create_test_context();
+        let functions = http_functions(ctx);
+
+        let manifest = Manifest::new([Wasm::data(TEST_HTTP_WASM)]);
+        let mut plugin = Plugin::new(manifest, functions, true).unwrap();
+        f(&mut plugin);
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct TestResult {
+        success: bool,
+        message: String,
+    }
+
+    #[test]
+    fn test_integration_http_get() {
+        run_plugin_with_http(|plugin: &mut Plugin| {
+            let result: String = plugin.call("test_http_get", "").unwrap();
+            let result: TestResult = serde_json::from_str(&result).unwrap();
+            assert!(result.success, "HTTP GET failed: {}", result.message);
+            assert!(result.message.contains("status=200"), "Expected status 200: {}", result.message);
+        });
+    }
+
+    #[test]
+    fn test_integration_http_post() {
+        run_plugin_with_http(|plugin: &mut Plugin| {
+            let result: String = plugin.call("test_http_post", "").unwrap();
+            let result: TestResult = serde_json::from_str(&result).unwrap();
+            assert!(result.success, "HTTP POST failed: {}", result.message);
+            assert!(result.message.contains("status=200"), "Expected status 200: {}", result.message);
+        });
+    }
+
+    #[test]
+    fn test_integration_http_put() {
+        run_plugin_with_http(|plugin: &mut Plugin| {
+            let result: String = plugin.call("test_http_put", "").unwrap();
+            let result: TestResult = serde_json::from_str(&result).unwrap();
+            assert!(result.success, "HTTP PUT failed: {}", result.message);
+            assert!(result.message.contains("status=200"), "Expected status 200: {}", result.message);
+        });
+    }
+
+    #[test]
+    fn test_integration_http_delete() {
+        run_plugin_with_http(|plugin: &mut Plugin| {
+            let result: String = plugin.call("test_http_delete", "").unwrap();
+            let result: TestResult = serde_json::from_str(&result).unwrap();
+            assert!(result.success, "HTTP DELETE failed: {}", result.message);
+            assert!(result.message.contains("status=200"), "Expected status 200: {}", result.message);
+        });
+    }
+
+    #[test]
+    fn test_integration_http_headers() {
+        run_plugin_with_http(|plugin: &mut Plugin| {
+            let result: String = plugin.call("test_http_headers", "").unwrap();
+            let result: TestResult = serde_json::from_str(&result).unwrap();
+            assert!(result.success, "HTTP headers test failed: {}", result.message);
+        });
+    }
+
+    #[test]
+    fn test_integration_http_status() {
+        run_plugin_with_http(|plugin: &mut Plugin| {
+            let result: String = plugin.call("test_http_status", "").unwrap();
+            let result: TestResult = serde_json::from_str(&result).unwrap();
+            assert!(result.success, "HTTP status test failed: {}", result.message);
+            assert!(result.message.contains("status=418"), "Expected status 418: {}", result.message);
+        });
+    }
+}

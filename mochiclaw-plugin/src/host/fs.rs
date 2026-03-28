@@ -136,9 +136,93 @@ impl FsContext {
             .any(|p| resolved_path.starts_with(p) || resolved_path == *p)
     }
 
-    /// Resolve a path with workspace context.
-    /// workspace is relative to allowed_root, then path is relative to workspace.
-    /// Both workspace and path must stay within allowed_root.
+    /// Resolve a path with workspace context (for write operations).
+    /// The file may not exist yet. We verify the final path stays within allowed_root.
+    fn resolve_path_for_write(
+        &self,
+        path: &Path,
+        workspace: &Path,
+    ) -> Result<PathBuf, String> {
+        // Resolve workspace relative to allowed_root
+        let resolved_workspace = if workspace.as_os_str().is_empty() {
+            self.allowed_root.clone()
+        } else if workspace.is_absolute() {
+            workspace.to_path_buf()
+        } else {
+            self.allowed_root.join(workspace)
+        }
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve workspace: {}", e))?;
+
+        // Check workspace is within allowed_root
+        if !resolved_workspace.starts_with(&self.allowed_root) {
+            return Err(format!(
+                "Workspace '{}' is outside allowed root '{}'",
+                resolved_workspace.display(),
+                self.allowed_root.display()
+            ));
+        }
+
+        // Resolve path relative to workspace
+        let joined = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            resolved_workspace.join(path)
+        };
+
+        // If path exists, canonicalize it to resolve symlinks, etc.
+        // If it doesn't exist, try canonicalizing parent; if parent also doesn't exist,
+        // use components to build the path (we'll create parent dirs in fs_write)
+        let resolved_path = if joined.exists() {
+            joined.canonicalize()
+                .map_err(|e| format!("Failed to resolve path: {}", e))?
+        } else if let Some(parent) = joined.parent() {
+            if parent.exists() {
+                // Parent exists, canonicalize it and append filename
+                let canonicalized_parent = parent.canonicalize()
+                    .map_err(|e| format!("Failed to resolve parent directory: {}", e))?;
+                let filename = joined.file_name()
+                    .ok_or_else(|| format!("Invalid path: no filename"))?;
+                canonicalized_parent.join(filename)
+            } else {
+                // Parent doesn't exist either - we'll create it later in fs_write
+                // For now, just normalize the path by resolving .. components
+                let mut components = Vec::new();
+                for c in joined.components() {
+                    match c {
+                        std::path::Component::ParentDir => {
+                            components.pop();
+                        }
+                        std::path::Component::Normal(name) => {
+                            components.push(name);
+                        }
+                        _ => {}
+                    }
+                }
+                let mut result = self.allowed_root.clone();
+                for c in components {
+                    result = result.join(c);
+                }
+                result
+            }
+        } else {
+            return Err(format!("Invalid path: '{}'", joined.display()));
+        };
+
+        // Check final path is within allowed_root
+        if !resolved_path.starts_with(&self.allowed_root) {
+            return Err(format!(
+                "Path '{}' is outside allowed root '{}'",
+                resolved_path.display(),
+                self.allowed_root.display()
+            ));
+        }
+
+        Ok(resolved_path)
+    }
+
+    /// Resolve a path with workspace context (for read operations).
+    /// For reading, the file must already exist.
     fn resolve_path_with_workspace(
         &self,
         path: &Path,
@@ -324,12 +408,12 @@ pub fn fs_read_fn(ctx: FsContext) -> Function {
 /// host_fs_write: write a file
 ///
 /// Input: MessagePack encoded FsWriteInput
-/// Output: i64 (0 = success, -1 = failed)
+/// Output: i32 (0 = success, 1 = failed)
 pub fn fs_write_fn(ctx: FsContext) -> Function {
     Function::new(
         "host_fs_write",
         [ValType::I64],
-        [ValType::I64],
+        [ValType::I32],
         UserData::new(ctx),
         |plugin: &mut CurrentPlugin,
          inputs: &[Val],
@@ -339,7 +423,7 @@ pub fn fs_write_fn(ctx: FsContext) -> Function {
                 Ok(ctx) => ctx,
                 Err(e) => {
                     tracing::error!("fs_write failed to get context: {}", e);
-                    outputs[0] = Val::I64(-1);
+                    outputs[0] = Val::I32(1);
                     return Ok(());
                 }
             };
@@ -347,7 +431,7 @@ pub fn fs_write_fn(ctx: FsContext) -> Function {
                 Ok(ctx) => ctx,
                 Err(e) => {
                     tracing::error!("fs_write failed to lock context: {}", e);
-                    outputs[0] = Val::I64(-1);
+                    outputs[0] = Val::I32(1);
                     return Ok(());
                 }
             };
@@ -355,14 +439,14 @@ pub fn fs_write_fn(ctx: FsContext) -> Function {
             // Read input from plugin memory
             let input_offset = inputs.first().and_then(|v| v.i64()).unwrap_or(0) as u64;
             if input_offset == 0 {
-                outputs[0] = Val::I64(-1);
+                outputs[0] = Val::I32(1);
                 return Ok(());
             }
 
             let handle = match plugin.memory_handle(input_offset) {
                 Some(h) => h,
                 None => {
-                    outputs[0] = Val::I64(-1);
+                    outputs[0] = Val::I32(1);
                     return Ok(());
                 }
             };
@@ -370,7 +454,7 @@ pub fn fs_write_fn(ctx: FsContext) -> Function {
             let bytes = match plugin.memory_bytes(handle) {
                 Ok(b) => b.to_vec(),
                 Err(_) => {
-                    outputs[0] = Val::I64(-1);
+                    outputs[0] = Val::I32(1);
                     return Ok(());
                 }
             };
@@ -378,27 +462,27 @@ pub fn fs_write_fn(ctx: FsContext) -> Function {
             let input: FsWriteInput = match from_msgpack(&bytes) {
                 Some(inp) => inp,
                 None => {
-                    outputs[0] = Val::I64(-1);
+                    outputs[0] = Val::I32(1);
                     return Ok(());
                 }
             };
 
-            // Resolve path with workspace context
+            // Resolve path with workspace context (for write, file may not exist yet)
             let resolved = match ctx
-                .resolve_path_with_workspace(Path::new(&input.path), Path::new(&input.workspace))
+                .resolve_path_for_write(Path::new(&input.path), Path::new(&input.workspace))
             {
                 Ok(p) => p,
                 Err(e) => {
-                    tracing::error!("fs_write path resolution failed: {}", e);
-                    outputs[0] = Val::I64(-1);
+                    tracing::error!("fs_write path resolution failed: path={}, workspace={}, error={}", input.path, input.workspace, e);
+                    outputs[0] = Val::I32(1);
                     return Ok(());
                 }
             };
 
             // Permission check on resolved path
             if !ctx.can_write(&resolved) {
-                tracing::warn!("fs_write denied: cannot write '{}'", input.path);
-                outputs[0] = Val::I64(-1);
+                tracing::warn!("fs_write denied: cannot write '{}'", resolved.display());
+                outputs[0] = Val::I32(1);
                 return Ok(());
             }
 
@@ -406,20 +490,20 @@ pub fn fs_write_fn(ctx: FsContext) -> Function {
             if let Some(parent) = resolved.parent() {
                 if let Err(e) = std::fs::create_dir_all(parent) {
                     tracing::error!("fs_write failed to create parent dir: {}", e);
-                    outputs[0] = Val::I64(-1);
+                    outputs[0] = Val::I32(1);
                     return Ok(());
                 }
             }
 
-            // Write file
+            // Write file: 0 = success, 1 = failure
             match std::fs::write(&resolved, &input.content) {
                 Ok(_) => {
                     tracing::debug!("fs_write success: {}", resolved.display());
-                    outputs[0] = Val::I64(0);
+                    outputs[0] = Val::I32(0);
                 }
                 Err(e) => {
                     tracing::error!("fs_write failed: {}", e);
-                    outputs[0] = Val::I64(-1);
+                    outputs[0] = Val::I32(1);
                 }
             }
             Ok(())
@@ -1491,7 +1575,154 @@ mod tests {
     fn test_fs_context_is_sync() {
         fn assert_sync<T: Sync>() {}
         let (_temp, root, _src, _symlink) = create_test_dirs();
-        let ctx = FsContext::new(root, Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        let _ctx = FsContext::new(root, Vec::new(), Vec::new(), Vec::new(), Vec::new());
         assert_sync::<FsContext>();
+    }
+}
+
+#[cfg(test)]
+mod fs_integration_tests {
+    use super::*;
+    use extism::{Manifest, Plugin, Wasm};
+    use serde::Deserialize;
+    use std::fs;
+    use tempfile::TempDir;
+
+    // WASM file for test-fs plugin
+    const TEST_FS_WASM: &[u8] =
+        include_bytes!("../../../target/wasm32-unknown-unknown/release/test_fs.wasm");
+
+    fn create_test_context(root: &std::path::Path) -> FsContext {
+        FsContext::new(root.to_path_buf(), vec![], vec![], vec![], vec![])
+    }
+
+    fn run_plugin_with_fs<F>(root: &std::path::Path, f: F)
+    where
+        F: FnOnce(&mut Plugin),
+    {
+        let ctx = create_test_context(root);
+        let functions = fs_functions(ctx);
+
+        let manifest = Manifest::new([Wasm::data(TEST_FS_WASM)]);
+        let mut plugin = Plugin::new(manifest, functions, true).unwrap();
+        f(&mut plugin);
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct TestResult {
+        success: bool,
+        message: String,
+    }
+
+    #[test]
+    fn test_integration_fs_write_read() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+
+        run_plugin_with_fs(&root, |plugin: &mut Plugin| {
+            let result: String = plugin.call("test_fs_write_read", "").unwrap();
+            let result: TestResult = serde_json::from_str(&result).unwrap();
+            assert!(result.success, "fs_write_read failed: {}", result.message);
+        });
+    }
+
+    #[test]
+    fn test_integration_fs_edit() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+
+        run_plugin_with_fs(&root, |plugin: &mut Plugin| {
+            let result: String = plugin.call("test_fs_edit", "").unwrap();
+            let result: TestResult = serde_json::from_str(&result).unwrap();
+            assert!(result.success, "fs_edit failed: {}", result.message);
+            assert!(
+                result.message.contains("Successfully"),
+                "Edit did not succeed: {}",
+                result.message
+            );
+        });
+    }
+
+    #[test]
+    fn test_integration_fs_edit_all() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+
+        run_plugin_with_fs(&root, |plugin: &mut Plugin| {
+            let result: String = plugin.call("test_fs_edit_all", "").unwrap();
+            let result: TestResult = serde_json::from_str(&result).unwrap();
+            assert!(result.success, "fs_edit_all failed: {}", result.message);
+            assert!(
+                result.message.contains("replace_all ok"),
+                "replace_all did not work: {}",
+                result.message
+            );
+        });
+    }
+
+    #[test]
+    fn test_integration_fs_list() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+
+        // Create some files in the temp directory
+        fs::write(root.join("test1.txt"), "content1").unwrap();
+        fs::write(root.join("test2.txt"), "content2").unwrap();
+        fs::create_dir_all(root.join("subdir")).unwrap();
+        fs::write(root.join("subdir/nested.txt"), "nested").unwrap();
+
+        run_plugin_with_fs(&root, |plugin: &mut Plugin| {
+            let result: String = plugin.call("test_fs_list", "").unwrap();
+            let result: TestResult = serde_json::from_str(&result).unwrap();
+            assert!(result.success, "fs_list failed: {}", result.message);
+        });
+    }
+
+    #[test]
+    fn test_integration_fs_list_recursive() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+
+        // Create a nested structure
+        fs::create_dir_all(root.join("a/b/c")).unwrap();
+        fs::write(root.join("a/file.txt"), "content").unwrap();
+        fs::write(root.join("a/b/file.txt"), "content").unwrap();
+        fs::write(root.join("a/b/c/file.txt"), "content").unwrap();
+
+        run_plugin_with_fs(&root, |plugin: &mut Plugin| {
+            let result: String = plugin.call("test_fs_list_recursive", "").unwrap();
+            let result: TestResult = serde_json::from_str(&result).unwrap();
+            assert!(
+                result.success,
+                "fs_list_recursive failed: {}",
+                result.message
+            );
+            assert!(
+                result.message.contains("entries shown:"),
+                "Expected entry count: {}",
+                result.message
+            );
+        });
+    }
+
+    #[test]
+    fn test_integration_fs_read_pagination() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+
+        run_plugin_with_fs(&root, |plugin: &mut Plugin| {
+            let result: String = plugin.call("test_fs_read_pagination", "").unwrap();
+            let result: TestResult = serde_json::from_str(&result).unwrap();
+            assert!(
+                result.success,
+                "fs_read_pagination failed: {}",
+                result.message
+            );
+            assert!(
+                result.message.contains("pagination ok"),
+                "Pagination did not work: {}",
+                result.message
+            );
+        });
     }
 }
