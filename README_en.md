@@ -12,9 +12,10 @@ A lambda-based AI Agent runtime framework with WASM lambda isolation.
 - **Isolated Execution**: Each lambda runs in an independent WASM VM for security
 - **Flexible Capability Control**: Fine-grained network and filesystem access control
 - **Multi-Lambda Support**: Load multiple lambdas simultaneously with concurrent execution via Pool
+- **Effect System**: HTTP requests declared as Effects, executed by host with permission enforcement
 - **Provider Lambdas**: Custom LLM Provider support (e.g., OpenAI-compatible API)
 - **Channel Lambdas**: Custom message channel support (e.g., WeChat)
-- **Tool Lambdas**: Filesystem, HTTP requests, and more tools
+- **Tool Lambdas**: Filesystem and more tools
 
 ## Project Structure
 
@@ -23,7 +24,11 @@ mochiclaw/
 ├── cli          # CLI main program
 ├── config       # Configuration management
 ├── core         # Core runtime
-├── lambda       # Lambda management
+│   ├── agent_loop.rs    # Agent orchestrator
+│   ├── lambda_loop.rs   # Lambda calling engine (with Effect loop)
+│   ├── http_executor.rs # HTTP Effect executor
+│   └── poller.rs       # Channel polling tasks
+├── lambda       # Lambda runtime management
 ├── sdk          # Lambda SDK
 ├── lambdas/               # Official lambdas
 │   ├── openai   # OpenAI-compatible Provider
