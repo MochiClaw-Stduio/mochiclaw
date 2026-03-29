@@ -1,0 +1,13 @@
+name = "mochi-weixin"
+version = "0.1.0"
+description = "WeChat channel lambda for Mochiclaw"
+
+[capabilities.network]
+enabled = true
+allowed_hosts = [
+    "ilinkai.weixin.qq.com",
+    "novac2c.cdn.weixin.qq.com",
+]
+
+[features]
+channel = true

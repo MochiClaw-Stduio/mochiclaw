@@ -1,6 +1,6 @@
 # Mochiclaw
 
-A plugin-based AI Agent runtime framework with WASM plugin isolation.
+A lambda-based AI Agent runtime framework with WASM lambda isolation.
 
 [简体中文](./README.md) | English
 
@@ -8,13 +8,14 @@ A plugin-based AI Agent runtime framework with WASM plugin isolation.
 
 ## Features
 
-- **Plugin Architecture**: Extend functionality via WASM plugins with hot-swapping support
-- **Isolated Execution**: Each plugin runs in an independent WASM VM for security
+- **Lambda Architecture**: Extend functionality via WASM lambdas with hot-swapping support
+- **Isolated Execution**: Each lambda runs in an independent WASM VM for security
 - **Flexible Capability Control**: Fine-grained network and filesystem access control
-- **Multi-Plugin Support**: Load multiple plugins simultaneously with concurrent execution via Pool
-- **Provider Plugins**: Custom LLM Provider support (e.g., OpenAI-compatible API)
-- **Channel Plugins**: Custom message channel support (e.g., WeChat)
-- **Tool Plugins**: Filesystem, HTTP requests, and more tools
+- **Multi-Lambda Support**: Load multiple lambdas simultaneously with concurrent execution via Pool
+- **Effect System**: HTTP requests declared as Effects, executed by host with permission enforcement
+- **Provider Lambdas**: Custom LLM Provider support (e.g., OpenAI-compatible API)
+- **Channel Lambdas**: Custom message channel support (e.g., WeChat)
+- **Tool Lambdas**: Filesystem and more tools
 
 ## Project Structure
 
@@ -23,9 +24,13 @@ mochiclaw/
 ├── cli          # CLI main program
 ├── config       # Configuration management
 ├── core         # Core runtime
-├── plugin       # Plugin management
-├── sdk          # Plugin SDK
-├── plugins/               # Official plugins
+│   ├── agent_loop.rs    # Agent orchestrator
+│   ├── lambda_loop.rs   # Lambda calling engine (with Effect loop)
+│   ├── http_executor.rs # HTTP Effect executor
+│   └── poller.rs       # Channel polling tasks
+├── lambda       # Lambda runtime management
+├── sdk          # Lambda SDK
+├── lambdas/               # Official lambdas
 │   ├── openai   # OpenAI-compatible Provider
 │   ├── fs       # Filesystem tools
 │   └── weixin   # WeChat Channel
@@ -42,14 +47,14 @@ For detailed documentation, see [docs/en/README.md](./docs/en/README.md).
 ### Build
 
 ```bash
-# Build everything (native + plugins)
+# Build everything (native + lambdas)
 just build
 
 # Build native only
 just build-native
 
-# Build plugins only
-just build-plugin
+# Build lambdas only
+just build-lambda
 ```
 
 ### Configure
@@ -63,7 +68,7 @@ max_iterations = 40
 workspace = "./workspace"
 
 [runtime]
-plugin_dirs = ["./target/plugins"]
+lambda_dirs = ["./target/lambdas"]
 
 [models.deepseek-chat]
 model = "deepseek-chat"
@@ -78,9 +83,9 @@ api_key = "sk-your-key"
 cargo run --release -p mochiclaw-cli
 ```
 
-## Official Plugins
+## Official Lambdas
 
-| Plugin | Type | Description |
+| Lambda | Type | Description |
 |--------|------|-------------|
 | mochi-openai | Provider | OpenAI-compatible API |
 | mochi-fs | Tool | Filesystem operations |

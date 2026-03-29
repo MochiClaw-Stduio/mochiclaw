@@ -5,8 +5,8 @@
 mod agent;
 mod channel;
 mod error;
+mod lambda;
 mod model;
-pub mod plugin;
 mod runtime;
 
 use config::{
@@ -18,8 +18,10 @@ use std::path::Path;
 pub use agent::AgentConfig;
 pub use channel::ChannelConfig;
 pub use error::ConfigError;
+pub use lambda::{
+    FsCapabilitiesOverride, LambdaCapabilitiesOverride, LambdaConfig, NetworkCapabilitiesOverride,
+};
 pub use model::ModelConfig;
-pub use plugin::{CapabilitiesOverride, PluginConfig};
 pub use runtime::{LogConfig, NetworkConfig, RuntimeConfig};
 
 /// Current configuration version
@@ -35,10 +37,10 @@ pub struct Config {
     /// Runtime configuration (logging, retention, etc.)
     #[serde(default)]
     pub runtime: RuntimeConfig,
-    /// Per-plugin configuration (key = plugin name)
+    /// Per-lambda configuration (key = lambda name)
     #[serde(default)]
-    pub plugins: HashMap<String, PluginConfig>,
-    /// Channel-specific plugin configuration
+    pub lambdas: HashMap<String, LambdaConfig>,
+    /// Channel-specific lambda configuration
     #[serde(default)]
     pub channels: HashMap<String, ChannelConfig>,
     /// Model configurations
@@ -117,7 +119,7 @@ impl Config {
                 workspace: ".".to_string(),
             },
             runtime: RuntimeConfig {
-                plugin_dirs: vec!["./plugins".to_string()],
+                lambda_dirs: vec!["./lambdas".to_string()],
                 log: LogConfig {
                     level: "info".to_string(),
                     dir: None,
@@ -127,7 +129,7 @@ impl Config {
                     use_system_proxy: false,
                 },
             },
-            plugins: HashMap::new(),
+            lambdas: HashMap::new(),
             channels: HashMap::new(),
             models: HashMap::from([(
                 "gpt-4".to_string(),

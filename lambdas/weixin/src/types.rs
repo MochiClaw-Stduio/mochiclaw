@@ -1,0 +1,73 @@
+//! Weixin API Types
+//!
+//! Type definitions for WeChat iLink HTTP API requests and responses.
+
+use mochiclaw_sdk::message::InboundMessage;
+use serde::{Deserialize, Serialize};
+
+// ============================================================================
+// Internal API Types
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+pub struct WeixinApiResponse {
+    #[serde(default)]
+    pub ret: Option<i32>,
+    #[serde(default)]
+    pub errcode: Option<i32>,
+    #[serde(default)]
+    pub msgs: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub get_updates_buf: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct QrStatusResponseInternal {
+    pub status: String,
+    pub bot_token: String,
+    pub baseurl: String,
+}
+
+// ============================================================================
+// Result Types for Internal Use
+// ============================================================================
+
+#[derive(Debug, Serialize)]
+pub struct QrStatusResult {
+    pub status: String,
+    pub token: Option<String>,
+    pub base_url: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PollResult {
+    pub messages: Vec<InboundMessage>,
+    pub get_updates_buf: String,
+    pub error: Option<String>,
+}
+
+// ============================================================================
+// Config
+// ============================================================================
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct WeixinConfig {
+    pub token: String,
+    pub base_url: String,
+    pub get_updates_buf: String,
+    #[serde(default)]
+    pub route_tag: String,
+}
+
+impl WeixinConfig {
+    pub fn load(path: &str) -> Option<Self> {
+        let content = std::fs::read(path).ok()?;
+        rmp_serde::from_slice(&content).ok()
+    }
+
+    pub fn save(&self, path: &str) -> Result<(), String> {
+        let content = rmp_serde::to_vec(self).map_err(|e| e.to_string())?;
+        std::fs::write(path, content).map_err(|e| e.to_string())
+    }
+}

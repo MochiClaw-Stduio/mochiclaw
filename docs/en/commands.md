@@ -84,16 +84,16 @@ if let Some(response) = registry.execute("weixin", "user123", "mycmd", "arg1 arg
 }
 ```
 
-## Plugin Commands
+## Lambda Commands
 
-Commands can also be provided by plugins with `features.command = true` in their manifest:
+Commands can also be provided by lambdas with `features.command = true` in their manifest:
 
 ```toml
 [features]
 command = true
 ```
 
-Plugin commands are called via `PluginHost::call` with the `execute` function.
+Lambda commands are called via `LambdaHost::call` with the `execute` function.
 
 ## Parsing
 
@@ -116,7 +116,7 @@ parse_command() → None? → Normal message processing
     ↓
 CommandRegistry.execute()
     ↓
-Built-in handler / Plugin call
+Built-in handler / Lambda call
     ↓
 Response sent via channel
 ```

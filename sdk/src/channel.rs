@@ -1,6 +1,6 @@
-//! Generic channel plugin types
+//! Generic channel lambda types
 //!
-//! Common request/response types for channel plugins (e.g., WeChat, Telegram, Discord).
+//! Common request/response types for channel lambdas (e.g., WeChat, Telegram, Discord).
 //! These types are channel-agnostic and can be reused across different channel implementations.
 
 use extism_convert::{FromBytes, Msgpack, ToBytes};
@@ -12,15 +12,15 @@ use crate::message::InboundMessage;
 // Login Types
 // ============================================================================
 
-/// Parameters for the login function - generic for all channel plugins
+/// Parameters for the login function - generic for all channel lambdas
 #[derive(Debug, Serialize, Deserialize, FromBytes, ToBytes)]
 #[encoding(Msgpack)]
 pub struct LoginParams {
-    /// Plugin-specific config bytes (e.g., previously saved token, credentials)
+    /// Lambda-specific config bytes (e.g., previously saved token, credentials)
     pub config: Vec<u8>,
 }
 
-/// Response from the login function - generic for all channel plugins
+/// Response from the login function - generic for all channel lambdas
 #[derive(Debug, Clone, Serialize, Deserialize, FromBytes, ToBytes)]
 #[encoding(Msgpack)]
 pub struct LoginResponse {
@@ -47,7 +47,7 @@ pub struct LoginResponse {
 // QR Code Status Types
 // ============================================================================
 
-/// Response from checking QR code scan status - generic for all channel plugins
+/// Response from checking QR code scan status - generic for all channel lambdas
 #[derive(Debug, Clone, Serialize, Deserialize, FromBytes, ToBytes)]
 #[encoding(Msgpack)]
 pub struct QrStatusResponse {
@@ -92,7 +92,7 @@ pub struct PollParams {
 // Send Types
 // ============================================================================
 
-/// Parameters for sending a text message - generic for all channel plugins
+/// Parameters for sending a text message - generic for all channel lambdas
 #[derive(Debug, Serialize, Deserialize, FromBytes, ToBytes)]
 #[encoding(Msgpack)]
 pub struct SendTextParams {

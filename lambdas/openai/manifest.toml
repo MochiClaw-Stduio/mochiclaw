@@ -1,0 +1,12 @@
+name = "mochi-openai"
+version = "0.1.0"
+description = "OpenAI-compatible provider lambda for Mochiclaw"
+
+[capabilities.network]
+enabled = true
+allowed_hosts = [
+    "*",
+]
+
+[features]
+provider = true

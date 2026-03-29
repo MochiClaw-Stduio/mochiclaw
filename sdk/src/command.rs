@@ -1,4 +1,4 @@
-//! Command types for plugin commands
+//! Command types for lambda commands
 
 use serde::{Deserialize, Serialize};
 
@@ -11,7 +11,7 @@ pub struct CommandInfo {
     pub description: String,
 }
 
-/// Request passed to a command plugin's execute function
+/// Request passed to a command lambda's execute function
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandRequest {
     /// Command name being invoked
@@ -24,7 +24,7 @@ pub struct CommandRequest {
     pub chat_id: String,
 }
 
-/// Response from a command plugin's execute function
+/// Response from a command lambda's execute function
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandResponse {
     /// Whether the command executed successfully

@@ -1,6 +1,6 @@
-//! Host FS functions - safe wrappers for plugin use
+//! Host FS functions - safe wrappers for lambda use
 //!
-//! Provides typed access to filesystem operations from plugins.
+//! Provides typed access to filesystem operations from lambdas.
 
 use extism_pdk::*;
 use rmp_serde::{Deserializer, Serializer};
@@ -40,7 +40,7 @@ pub struct FsListInput {
     pub max_entries: u64,
 }
 
-// Declare external host functions for FS operations (provided by mochiclaw-plugin)
+// Declare external host functions for FS operations (provided by mochiclaw-lambda)
 // Note: we use raw FFI instead of #[host_fn] to avoid extism bug with non-pointer return types
 #[link(wasm_import_module = "extism:host/user")]
 unsafe extern "C" {

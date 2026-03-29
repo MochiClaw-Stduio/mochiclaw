@@ -28,9 +28,9 @@ pub struct NetworkConfig {
 /// Runtime configuration
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RuntimeConfig {
-    /// Directories to scan for plugins
+    /// Directories to scan for lambdas
     #[serde(default)]
-    pub plugin_dirs: Vec<String>,
+    pub lambda_dirs: Vec<String>,
     #[serde(default)]
     pub log: LogConfig,
     #[serde(default)]

@@ -10,12 +10,12 @@ Welcome to the Mochiclaw documentation.
 
 - [Architecture](./architecture.md) - System architecture and components
 - [Configuration](./configuration.md) - Configuration reference
-- [Plugin Tutorial](./plugin-tutorial.md) - Create your first plugin
+- [Lambda Tutorial](./lambda-tutorial.md) - Create your first lambda
 
-## Plugin System
+## Lambda System
 
-- [Plugin System Overview](./plugin-system.md) - WASM plugin architecture
-- [Host Functions](./host-functions.md) - Capabilities available to plugins
+- [Lambda System Overview](./lambda-system.md) - WASM lambda architecture
+- [Host Functions](./host-functions.md) - Capabilities available to lambdas
 - [Commands](./commands.md) - Slash command system
 
 ## Development

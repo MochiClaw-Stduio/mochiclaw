@@ -6,7 +6,7 @@
 
 ## Getting Started
 
-Mochiclaw is a plugin-based AI Agent runtime framework built with Rust and Extism WASM. Contributions are welcome!
+Mochiclaw is a lambda-based AI Agent runtime framework built with Rust and Extism WASM. Contributions are welcome!
 
 ### Development Environment
 
@@ -28,16 +28,16 @@ just build
 ### Building
 
 ```bash
-# Build everything (native + plugins)
+# Build everything (native + lambdas)
 just build
 
 # Build native only
 just build-native
 
-# Build plugins only
-just build-plugin
+# Build lambdas only
+just build-lambda
 
-# Build specific plugin
+# Build specific lambda
 cargo build --release --target wasm32-unknown-unknown -p mochi-openai
 ```
 
@@ -60,27 +60,27 @@ just test
 |-------|---------|
 | `mochiclaw-cli` | CLI entry point |
 | `mochiclaw-core` | Agent runtime (AgentLoop, MessageBus, SessionManager) |
-| `mochiclaw-plugin` | WASM plugin host (PluginHost, Pool) |
-| `mochiclaw-sdk` | Shared types for host and plugins |
+| `mochiclaw-lambda` | WASM lambda host (LambdaHost, Pool) |
+| `mochiclaw-sdk` | Shared types for host and lambdas |
 | `mochiclaw-config` | Configuration structures |
 
-Official plugins under `plugins/`:
+Official lambdas under `lambdas/`:
 - `mochi-openai` - OpenAI-compatible LLM provider
 - `mochi-fs` - Filesystem tools
 - `mochi-weixin` - WeChat channel
 
-## Writing Plugins
+## Writing Lambdas
 
-See [plugin-tutorial.md](./plugin-tutorial.md) for detailed plugin development guide.
+See [lambda-tutorial.md](./lambda-tutorial.md) for detailed lambda development guide.
 
 ## Commit Guidelines
 
 ```
-feat: add new plugin type
+feat: add new lambda type
 fix: resolve agent loop deadlock
 docs: add configuration guide
 refactor: simplify message bus
-test: add integration tests for fs plugin
+test: add integration tests for fs lambda
 ```
 
 ## Reporting Issues

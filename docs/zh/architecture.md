@@ -6,28 +6,51 @@ English | [简体中文](../zh/architecture.md)
 
 ## 概述
 
-Mochiclaw 是一个基于插件的 AI Agent 运行时。架构分为四个主要层次：
+Mochiclaw 是一个异步优先的 AI Agent 运行时，建立在 lambda 架构之上。核心设计原则：**异步 Task 极其廉价，Wasm 线程非常昂贵**。数百个通道轮询任务可以在异步空间中同时运行，内存占用极小，而实际 Wasm 执行只在需要时通过线程池进行。
+
+## 核心设计原则
+
+| 资源 | 成本 | 示例 |
+|------|------|------|
+| Async Task (Tokio) | **极其廉价** | 1000 个通道轮询器，最小内存占用 |
+| Wasm 线程 | **昂贵** | 基于 Pool 执行，仅在实际调用期间占用 |
+
+通道轮询任务大部分时间在 `await` 网络响应——不占用任何 OS 线程。Wasm 资源仅在 `spawn_blocking` 执行实际 lambda 代码的短暂时刻消耗。
+
+## 架构层次
 
 ```
-┌─────────────────────────────────────────┐
-│              mochiclaw-cli              │  入口
-├─────────────────────────────────────────┤
-│             mochiclaw-core              │  Agent 编排
-│  ┌──────────┐ ┌──────────┐ ┌─────────┐  │
-│  │AgentLoop │ │MessageBus│ │Session  │  │
-│  └──────────┘ └──────────┘ └─────────┘  │
-├─────────────────────────────────────────┤
-│            mochiclaw-plugin             │  插件主机 (Extism)
-│  ┌──────────────────────────────────┐   │
-│  │  PluginHost  │  Pool  │ Host Fn  │   │
-│  └──────────────────────────────────┘   │
-├─────────────────────────────────────────┤
-│              plugins/                   │  WASM 插件
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐    │
-│  │ OpenAI  │ │   FS    │ │ WeChat  │    │
-│  │Provider │ │  Tool   │ │ Channel │    │
-│  └─────────┘ └─────────┘ └─────────┘    │
-└─────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│                        mochiclaw-cli                          │  入口
+├───────────────────────────────────────────────────────────────┤
+│                       mochiclaw-core                          │  Agent 编排
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐ │
+│  │  AgentLoop   │  │  MessageBus  │  │  SessionManager      │ │
+│  └──────────────┘  └──────────────┘  └──────────────────────┘ │
+│                                                               │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │  Poller (数百个独立的异步任务)                         │   │
+│  │  每个通道 → tokio::spawn → await poll → feed bus       │   │
+│  └────────────────────────────────────────────────────────┘   │
+├───────────────────────────────────────────────────────────────┤
+│                      mochiclaw-lambda                         │  Lambda 运行时
+│  ┌───────────────────────────────────────────────────────┐    │
+│  │  LambdaHost (基于 Pool 的并发执行)                    │    │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐               │    │
+│  │  │ Pool     │ │ Pool     │ │ Pool     │  (per lambda) │    │
+│  │  │ (openai) │ │ (fs)     │ │ (weixin) │               │    │
+│  │  └──────────┘ └──────────┘ └──────────┘               │    │
+│  └───────────────────────────────────────────────────────┘    │
+│  ┌───────────────────────────────────────────────────────┐    │
+│  │  AsyncHttpExecutor (主机端 HTTP effect 执行)          │    │
+│  └───────────────────────────────────────────────────────┘    │
+├───────────────────────────────────────────────────────────────┤
+│                        lambdas/                               │  WASM Lambdas
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐                          │
+│  │ OpenAI  │ │   FS    │ │ WeChat  │                          │
+│  │Provider │ │  Tool   │ │ Channel │                          │
+│  └─────────┘ └─────────┘ └─────────┘                          │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 ## 核心组件
@@ -36,84 +59,194 @@ Mochiclaw 是一个基于插件的 AI Agent 运行时。架构分为四个主要
 
 `AgentLoop` 是核心编排器：
 
-1. **Poll** - 查询 channel 插件获取新消息
-2. **Route** - 将消息路由到相应处理器
-3. **Execute** - 运行 LLM + tools 的 agent 迭代
-4. **Respond** - 通过 channel 插件发送响应
-
-```
-消息 → AgentLoop → [Session] → LLM Provider → [Tools] → 响应
-```
+1. **Spawn Pollers** - 为每个通道启动独立的异步任务
+2. **Consume** - 从 MessageBus 接收 `InboundMessage`
+3. **Execute** - 通过 `lambda_loop` 运行 LLM + tools 的 agent 迭代
+4. **Respond** - 通过 channel lambda 发送响应
 
 关键字段：
-- `bus: MessageBus` - 内部消息路由
+- `bus: MessageBus` - 内部消息路由（mpsc）
 - `sessions: SessionManager` - 对话历史
-- `commands: CommandRegistry` - 斜杠命令处理
-- `tool_definitions` - 插件提供的可用工具
+- `http_executor: AsyncHttpExecutor` - 执行 lambda 返回的 HTTP effects
+- `poll_state` - 每个通道的轮询状态，用于可恢复轮询
 
 ### MessageBus (`mochiclaw-core`)
 
-多生产者单消费者（mpsc）消息总线，用于内部通信。
+多生产者单消费者（mpsc）消息总线。轮询任务生产，AgentLoop 消费。
 
-### SessionManager (`mochiclaw-core`)
+### Poller (`mochiclaw-core`)
 
-管理存储在磁盘上的对话历史。每个会话在 `sessions/` 下有独立文件。
+每个通道有一个独立的 `tokio::spawn` 任务：
 
-### PluginHost (`mochiclaw-plugin`)
+```rust
+spawn_channel_poller(channel_name, config, bus, lambda_host, http_executor, poll_state)
+```
 
-管理 WASM 插件生命周期：
+- 以 2 秒间隔运行无限循环
+- 每次 tick 调用 `lambda_call_typed(PreparePoll)`
+- 将结果消息发送到 MessageBus
+- 在迭代之间持久化轮询状态（如同步游标）
+
+### LambdaHost (`mochiclaw-lambda`)
+
+通过基于 Pool 的并发管理 WASM lambda 生命周期：
 
 | 组件 | 用途 |
 |------|------|
-| `CompiledPlugin` | JIT 编译的 WASM 模块（每个插件一个） |
-| `Pool` | 用于并发的运行实例池 |
-| `HostFunctions` | 暴露给插件的能力 |
+| `CompiledPlugin` | JIT 编译的 WASM 模块（跨 pool 共享） |
+| `Pool` | 并发 `Plugin` 实例的工厂（最大 = CPU 核心数） |
+| `HostFunctions` | 暴露的能力：FS、KV、Rand（HTTP 移至主机层） |
+| `LambdaContext` | 每个 lambda 的合并 manifest + config |
 
-### 插件类型
+### AsyncHttpExecutor (`mochiclaw-core`)
 
-| 类型 | 接口 | 示例 |
-|------|------|------|
-| `provider` | `chat`, `chat_stream` | mochi-openai |
-| `channel` | `poll`, `send_text`, `set_typing` | mochi-weixin |
-| `tool` | `execute_tool`, `get_tools` | mochi-fs |
-| `command` | `execute` | - |
+在**主机端**执行 lambda 返回的 `HttpEffect`：
+
+- **权限 enforcement**：执行前检查 `allowed_hosts`/`denied_hosts`
+- **代理支持**：每个 lambda 的 proxy URL 或系统代理
+- **并行执行**：多个 effects 用 `futures::join_all()`
+
+### LambdaLoop (`mochiclaw-core`)
+
+统一的 lambda 调用引擎，带 effect 循环：
+
+```rust
+// 根据 LambdaOutput { effects, result, new_state } 的四种情况
+lambda_call(lambda_host, http_executor, lambda_name, action, payload, state)
+```
+
+| result | effects | 行为 |
+|--------|---------|------|
+| 非空 | 空 | 最终结果，结束 loop |
+| 非空 | 非空 | 执行 effects（fire-and-forget），返回 result |
+| 空 | 非空 | 执行 effects，收集结果，继续 loop |
+| 空 | 空 | 错误 |
+
+## Lambda 类型与 Action
+
+所有 lambda 使用统一的 `lambda_function` 入口点，通过 `Action` 分发：
+
+| Lambda 类型 | Actions |
+|-------------|---------|
+| `provider` | `Chat` |
+| `channel` | `PreparePoll`, `FormatSend`, `SetTyping`, `Login`, `CheckLogin` |
+| `tool` | `GetTools`, `ExecuteTool` |
+
+### 统一的 LambdaInput/LambdaOutput
+
+```rust
+struct LambdaInput {
+    version: u32,
+    action: Action,
+    state: Vec<u8>,           // 上一次 new_state（MessagePack）
+    payload: Vec<u8>,        // Action 参数（MessagePack）
+    effect_results: Vec<EffectResult>,  // 上一次 effect 执行结果
+}
+
+struct LambdaOutput {
+    effects: Vec<Effect>,     // 需要主机执行的 HTTP 请求
+    result: Vec<u8>,         // Action 结果（MessagePack）
+    new_state: Vec<u8>,       // 传给下次调用的状态
+}
+```
 
 ## 数据流
 
 ### 消息处理
 
 ```
-1. Channel Plugin (poll) → InboundMessage
-2. AgentLoop → SessionManager (追加到历史)
-3. AgentLoop → ContextBuilder (构建系统提示)
-4. AgentLoop → Provider Plugin (chat request)
-5. 如果有 tool_calls:
-   a. AgentLoop → Tool Plugin (execute_tool)
-   b. 重复 4-5 直到没有 tool_calls
-6. AgentLoop → Channel Plugin (send_text response)
+┌─ 通道轮询器（独立的异步任务） ───────────────────────────────────┐
+│                                                                  │
+│  [weixin] ──► lambda_call(PreparePoll) ──► messages ──┐          │
+│                                                       │          │
+│  [telegram] ─► lambda_call(PreparePoll) ──► messages ─┼──► Bus   │
+│                                                       │          │
+│  [slack] ───► lambda_call(PreparePoll) ──► messages ──┘          │
+└──────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─ AgentLoop ──────────────────────────────────────────────────────┐
+│                                                                  │
+│  recv_inbound() ─► Session ─► ContextBuilder                     │
+│                                    │                             │
+│                          lambda_call(Chat) ──► LLM               │
+│                                    │                             │
+│                          如果有 tool_calls:                      │
+│                           lambda_call(ExecuteTool)               │
+│                                    │                             │
+│                          lambda_call(FormatSend) ──► Bus         │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-### 能力 enforcement
+### HTTP Effect 执行（Provider Lambda）
 
 ```
-Plugin Manifest → Extism Manifest
-                     ↓
-              Allowed Hosts
-                     ↓
-              PluginHost host_http_request()
-                     ↓
-              检查 whitelist/blacklist
-                     ↓
-              执行或拒绝
+Provider Lambda                    Host                            外部
+      │                              │                                │
+      │ lambda_call(Chat)            │                                │
+      │◄─────────────────────────────┤                                │
+      │                              │                                │
+      │ LambdaOutput {               │                                │
+      │   effects: [HttpEffect],     │                                │
+      │   result: empty              │                                │
+      │ }                            │                                │
+      │─────────────────────────────►│                                │
+      │                              │                                │
+      │                    AsyncHttpExecutor                          │
+      │                    .execute_all()                             │
+      │                              │                                │
+      │                    HTTP Request ─────────────────────────────►│
+      │                              │                                │
+      │                    EffectResult { success, response }         │
+      │◄─────────────────────────────│                                │
+      │                              │                                │
+      │ lambda_call(Chat,            │                                │
+      │   effect_results=[result])   │                                │
+      │◄─────────────────────────────┤                                │
+      │                              │                                │
+      │ LambdaOutput {               │                                │
+      │   effects: [],               │                                │
+      │   result: ChatResponse       │                                │
+      │ }                            │                                │
+      │─────────────────────────────►│ (return to AgentLoop)          │
+```
+
+## 能力 Enforcement
+
+```
+Lambda Manifest + Config
+         │
+         ▼
+┌─────────────────────────┐
+│   Merged Capabilities   │
+│   (allowed_hosts,       │
+│    fs permissions, etc) │
+└───────────┬─────────────┘
+            │
+            ▼
+┌─────────────────────────────────────────┐
+│          AsyncHttpExecutor              │
+│                                         │
+│  1. Check network_enabled()             │
+│  2. Check is_host_allowed(url)          │
+│     (glob patterns, blacklist wins)     │
+│  3. Apply proxy settings                │
+│  4. Execute HTTP                        │
+│  5. Return EffectResult                 │
+└─────────────────────────────────────────┘
 ```
 
 ## 关键文件
 
 | 文件 | 描述 |
 |------|------|
-| `core/src/agent.rs` | AgentLoop 实现 |
+| `core/src/agent_loop.rs` | AgentLoop 实现 |
+| `core/src/lambda_loop.rs` | 统一的 lambda 调用引擎，带 effect 循环 |
+| `core/src/http_executor.rs` | 异步 HTTP effect 执行器 |
+| `core/src/poller.rs` | 通道轮询任务生成器 |
 | `core/src/bus.rs` | MessageBus |
 | `core/src/session.rs` | SessionManager |
-| `plugin/src/plugin.rs` | PluginHost |
-| `plugin/src/host/mod.rs` | Host functions |
-| `sdk/src/lib.rs` | 共享类型 |
+| `lambda/src/lambda.rs` | LambdaHost 与 Pool 机制 |
+| `lambda/src/context.rs` | LambdaContext（manifest + config） |
+| `lambda/src/host/mod.rs` | Host functions（FS、KV、Rand） |
+| `sdk/src/lambda/mod.rs` | Action、LambdaInput、LambdaOutput 类型 |

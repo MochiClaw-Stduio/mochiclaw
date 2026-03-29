@@ -18,6 +18,7 @@ const TOOLS_TEMPLATE: &str = include_str!("../templates/TOOLS.md");
 const MEMORY_TEMPLATE: &str = include_str!("../templates/MEMORY.md");
 
 /// Context builder for agent prompts
+#[derive(Clone)]
 pub struct ContextBuilder {
     workspace: PathBuf,
 }

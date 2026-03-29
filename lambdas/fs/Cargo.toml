@@ -1,0 +1,15 @@
+[package]
+name = "mochi-fs"
+version.workspace = true
+edition.workspace = true
+description = "Filesystem tool lambda for Mochiclaw"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+extism-pdk.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+rmp-serde.workspace = true
+mochiclaw-sdk = { path = "../../sdk" }

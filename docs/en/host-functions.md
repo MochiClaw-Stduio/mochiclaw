@@ -6,75 +6,9 @@
 
 ## Overview
 
-Host functions are capabilities exposed to WASM plugins by the runtime. Plugins access them through the `mochiclaw_sdk::host::*` module.
+Host functions are capabilities exposed to WASM lambdas by the runtime. Lambdas access them through the `mochiclaw_sdk::host::*` module.
 
-## HTTP
-
-Plugins can make HTTP requests to allowed hosts.
-
-```rust
-use mochiclaw_sdk::host::http::{HttpClient, HttpError};
-
-// GET request
-let response = HttpClient::get("https://api.example.com/data")
-    .header("Authorization", "Bearer token")
-    .send()?;
-
-// POST request with JSON body
-let response = HttpClient::post("https://api.example.com/data")
-    .json(&payload)?
-    .send()?;
-```
-
-### HttpClient Methods
-
-| Method | Description |
-|--------|-------------|
-| `HttpClient::new()` | Create new client (defaults to GET) |
-| `HttpClient::get(url)` | Start GET request |
-| `HttpClient::post(url)` | Start POST request |
-| `HttpClient::put(url)` | Start PUT request |
-| `HttpClient::delete(url)` | Start DELETE request |
-| `HttpClient::patch(url)` | Start PATCH request |
-| `HttpClient::head(url)` | Start HEAD request |
-| `.url(url)` | Set URL |
-| `.method(verb)` | Set HTTP method |
-| `.header(key, value)` | Add header |
-| `.json(value)` | Set JSON body (sets Content-Type) |
-| `.body(bytes)` | Set raw body bytes |
-| `.send()` | Execute request |
-
-### HttpResponse Methods
-
-```rust
-let response = HttpClient::get("https://api.example.com").send()?;
-
-// Parse as text
-let text = response.text()?;
-
-// Parse as JSON
-let data: MyType = response.json()?;
-
-// Raw bytes
-let bytes = response.bytes();
-```
-
-| Method | Returns |
-|--------|---------|
-| `text()` | `Result<&str>` |
-| `json<T>()` | `Result<T>` (JSON deserialize) |
-| `bytes()` | `&[u8]` |
-
-### HttpError Variants
-
-```rust
-pub enum HttpError {
-    Request(String),      // Request failed
-    StatusCode(u16),      // HTTP error status
-    InvalidUtf8,          // Response not UTF-8
-    Json(serde_json::Error), // JSON parse error
-}
-```
+**Note**: HTTP is no longer a host function. Lambdas declare HTTP as `HttpEffect` in their return value, and the host's `AsyncHttpExecutor` handles execution with permission enforcement. See [Effect System](../en/lambda-system.md#effect-system-http-execution) for details.
 
 ## Filesystem
 
@@ -145,7 +79,7 @@ fn fs_list(
 
 ## KV Storage
 
-Plugin-private key-value store with optional cross-plugin read access.
+Lambda-private key-value store with optional cross-lambda read access.
 
 ```rust
 use mochiclaw_sdk::host::kv::{kv_get, kv_set, kv_remove, kv_get_raw};
@@ -175,18 +109,18 @@ let raw = kv_get_raw("binary")?;
 | `kv_set_raw(key, bytes)` | Store raw bytes |
 | `kv_get_raw(key)` | Get raw bytes |
 | `kv_remove(key)` | Delete key |
-| `kv_list_readable()` | List plugins readable by this plugin |
-| `kv_list_writable()` | List plugins writable by this plugin |
+| `kv_list_readable()` | List lambdas readable by this lambda |
+| `kv_list_writable()` | List lambdas writable by this lambda |
 
-### Cross-Plugin KV Access
+### Cross-Lambda KV Access
 
-If a plugin has `allowed_kv_read = ["plugin-a", "plugin-b"]` in its capabilities:
+If a lambda has `allowed_kv_read = ["lambda-a", "lambda-b"]` in its capabilities:
 
 ```rust
 use mochiclaw_sdk::host::kv::kv_get_from;
 
-// Read from another plugin's KV
-let value: SomeType = kv_get_from("plugin-a", "shared_key")?;
+// Read from another lambda's KV
+let value: SomeType = kv_get_from("lambda-a", "shared_key")?;
 ```
 
 ## Random
