@@ -1,4 +1,4 @@
-name = "mochiclaw-weixin"
+name = "mochi-weixin"
 version = "0.1.0"
 description = "WeChat channel plugin for Mochiclaw"
 

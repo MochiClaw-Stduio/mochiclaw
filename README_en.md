@@ -26,9 +26,9 @@ mochiclaw/
 ├── mochiclaw-plugin       # Plugin management
 ├── mochiclaw-sdk          # Plugin SDK
 ├── plugins/               # Official plugins
-│   ├── mochiclaw-openai   # OpenAI-compatible Provider
-│   ├── mochiclaw-fs       # Filesystem tools
-│   └── mochiclaw-weixin   # WeChat Channel
+│   ├── mochi-openai   # OpenAI-compatible Provider
+│   ├── mochi-fs       # Filesystem tools
+│   └── mochi-weixin   # WeChat Channel
 └── workspace/             # Working directory
 ```
 
@@ -67,7 +67,7 @@ plugin_dirs = ["./target/plugins"]
 
 [models.deepseek-chat]
 model = "deepseek-chat"
-provider = "mochiclaw-openai"
+provider = "mochi-openai"
 api_base = "https://api.deepseek.com/v1"
 api_key = "sk-your-key"
 ```
@@ -82,9 +82,9 @@ cargo run --release -p mochiclaw-cli
 
 | Plugin | Type | Description |
 |--------|------|-------------|
-| mochiclaw-openai | Provider | OpenAI-compatible API |
-| mochiclaw-fs | Tool | Filesystem operations |
-| mochiclaw-weixin | Channel | WeChat message channel |
+| mochi-openai | Provider | OpenAI-compatible API |
+| mochi-fs | Tool | Filesystem operations |
+| mochi-weixin | Channel | WeChat message channel |
 
 ## Development
 

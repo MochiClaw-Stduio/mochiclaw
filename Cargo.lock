@@ -1583,6 +1583,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "mochi-fs"
+version = "0.1.0"
+dependencies = [
+ "extism-pdk",
+ "mochiclaw-sdk",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "mochi-openai"
+version = "0.1.0"
+dependencies = [
+ "extism-pdk",
+ "mochiclaw-sdk",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "mochi-weixin"
+version = "0.1.0"
+dependencies = [
+ "aes",
+ "base64",
+ "cipher",
+ "extism-pdk",
+ "generic-array",
+ "hex",
+ "md-5",
+ "mochiclaw-sdk",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mochiclaw-cli"
 version = "0.1.0"
 dependencies = [
@@ -1634,27 +1672,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mochiclaw-fs"
-version = "0.1.0"
-dependencies = [
- "extism-pdk",
- "mochiclaw-sdk",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "mochiclaw-openai"
-version = "0.1.0"
-dependencies = [
- "extism-pdk",
- "mochiclaw-sdk",
- "rmp-serde",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "mochiclaw-plugin"
 version = "0.1.0"
 dependencies = [
@@ -1688,23 +1705,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.69",
-]
-
-[[package]]
-name = "mochiclaw-weixin"
-version = "0.1.0"
-dependencies = [
- "aes",
- "base64",
- "cipher",
- "extism-pdk",
- "generic-array",
- "hex",
- "md-5",
- "mochiclaw-sdk",
- "rmp-serde",
- "serde",
- "serde_json",
 ]
 
 [[package]]

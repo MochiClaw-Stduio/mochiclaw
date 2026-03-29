@@ -73,9 +73,9 @@ Mochiclaw 是一个基于插件的 AI Agent 运行时。架构分为四个主要
 
 | 类型 | 接口 | 示例 |
 |------|------|------|
-| `provider` | `chat`, `chat_stream` | mochiclaw-openai |
-| `channel` | `poll`, `send_text`, `set_typing` | mochiclaw-weixin |
-| `tool` | `execute_tool`, `get_tools` | mochiclaw-fs |
+| `provider` | `chat`, `chat_stream` | mochi-openai |
+| `channel` | `poll`, `send_text`, `set_typing` | mochi-weixin |
+| `tool` | `execute_tool`, `get_tools` | mochi-fs |
 | `command` | `execute` | - |
 
 ## 数据流

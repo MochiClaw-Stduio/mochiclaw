@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 /// Discovered plugin info
 #[derive(Debug)]
 pub struct DiscoveredPlugin {
-    pub name: String,
     pub manifest: PluginManifest,
     pub wasm_path: PathBuf,
 }
@@ -35,17 +34,16 @@ pub fn discover(plugin_dir: &Path) -> Result<Vec<DiscoveredPlugin>, std::io::Err
             continue;
         }
 
-        let plugin_name = match entry_path.file_name().and_then(|n| n.to_str()) {
-            Some(n) => n,
-            None => continue,
-        };
-
         // Check for manifest.toml
         let manifest_path = entry_path.join("manifest.toml");
         let manifest = match PluginManifest::from_file(&manifest_path) {
             Ok(m) => m,
             Err(e) => {
-                tracing::warn!("failed to load manifest for '{}': {}", plugin_name, e);
+                tracing::warn!(
+                    "failed to load manifest at '{}': {}",
+                    manifest_path.display(),
+                    e
+                );
                 continue;
             }
         };
@@ -58,25 +56,24 @@ pub fn discover(plugin_dir: &Path) -> Result<Vec<DiscoveredPlugin>, std::io::Err
         {
             tracing::debug!(
                 "skipping '{}': not a channel, provider, command, or tool",
-                plugin_name
+                manifest.name
             );
             continue;
         }
 
-        // Find the wasm file (same directory as manifest.toml)
-        let wasm_path = entry_path.join(format!("{}.wasm", plugin_name));
+        // Find the wasm file (same directory as manifest.toml, named after manifest.name)
+        let wasm_path = entry_path.join(format!("{}.wasm", manifest.name));
 
         if !wasm_path.exists() {
             tracing::debug!(
                 "skipping '{}': no wasm found at {}",
-                plugin_name,
+                manifest.name,
                 wasm_path.display()
             );
             continue;
         }
 
         plugins.push(DiscoveredPlugin {
-            name: plugin_name.to_string(),
             manifest,
             wasm_path,
         });

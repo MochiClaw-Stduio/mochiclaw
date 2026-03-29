@@ -16,9 +16,9 @@ Mochiclaw 的插件系统基于 **Extism** 构建，允许插件以 **WASM（WAS
 
 | 类型 | 说明 | 示例 |
 |------|------|------|
-| `provider` | LLM Provider，提供 AI 模型调用能力 | `mochiclaw-openai` |
-| `channel` | 消息通道，处理用户消息输入输出 | `mochiclaw-weixin` |
-| `tool` | 工具，提供各种辅助能力 | `mochiclaw-fs` |
+| `provider` | LLM Provider，提供 AI 模型调用能力 | `mochi-openai` |
+| `channel` | 消息通道，处理用户消息输入输出 | `mochi-weixin` |
+| `tool` | 工具，提供各种辅助能力 | `mochi-fs` |
 | `command` | 命令，处理特定命令 | - |
 
 ### 2. 能力系统（Capabilities）
@@ -70,7 +70,7 @@ allowed_kv_read = ["plugin-a", "plugin-b"]  # 可读取其他插件的 KV
 每个插件需要一个 `manifest.toml` 文件：
 
 ```toml
-name = "mochiclaw-fs"
+name = "mochi-fs"
 version = "0.1.0"
 description = "Filesystem tools: read_file, write_file, edit_file, list_dir"
 
@@ -201,7 +201,7 @@ cargo new --target wasm32-unknown-unknown my-plugin
 ### 2. 编写 manifest.toml
 
 ```toml
-name = "mochiclaw-my-plugin"
+name = "mochi-my-plugin"
 version = "0.1.0"
 description = "My custom plugin"
 
@@ -242,24 +242,24 @@ pub fn execute_tool(input: ToolExecutionRequest) -> FnResult<ToolExecutionRespon
 ### 4. 构建
 
 ```bash
-cargo build --release --target wasm32-unknown-unknown -p mochiclaw-my-plugin
+cargo build --release --target wasm32-unknown-unknown -p mochi-my-plugin
 ```
 
 ### 5. 部署
 
-将 `target/wasm32-unknown-unknown/release/mochiclaw_my_plugin.wasm` 和 `manifest.toml` 复制到插件目录。
+将 `target/wasm32-unknown-unknown/release/mochi_my_plugin.wasm` 和 `manifest.toml` 复制到插件目录。
 
 ## 配置覆盖
 
 用户可以在 `config.toml` 中覆盖插件声明的能力：
 
 ```toml
-[plugins.mochiclaw-openai]
-[plugins.mochiclaw-openai.capabilities.network]
+[plugins.mochi-openai]
+[plugins.mochi-openai.capabilities.network]
 allowed_hosts = ["*.openai.com", "*.deepseek.com"]
 
-[plugins.mochiclaw-fs]
-[plugins.mochiclaw-fs.capabilities.fs]
+[plugins.mochi-fs]
+[plugins.mochi-fs.capabilities.fs]
 allowed_root = "/custom/path"
 ```
 

@@ -1,5 +1,5 @@
 [package]
-name = "mochiclaw-openai"
+name = "mochi-openai"
 version.workspace = true
 edition.workspace = true
 description = "OpenAI-compatible provider plugin for Mochiclaw"
@@ -12,4 +12,4 @@ extism-pdk.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 rmp-serde.workspace = true
-mochiclaw-sdk = { path = "../../mochiclaw-sdk" }
+mochiclaw-sdk = { path = "../../sdk" }

@@ -1,5 +1,5 @@
 [package]
-name = "mochiclaw-fs"
+name = "mochi-fs"
 version.workspace = true
 edition.workspace = true
 description = "Filesystem tool plugin for Mochiclaw"
@@ -11,4 +11,4 @@ crate-type = ["cdylib"]
 extism-pdk.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-mochiclaw-sdk = { path = "../../mochiclaw-sdk" }
+mochiclaw-sdk = { path = "../../sdk" }

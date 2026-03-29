@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::logging_utils::{cleanup_old_logs, resolve_log_dir};
 
 use mochiclaw_config::{ChannelConfig, Config};
-use mochiclaw_core::{AgentLoop, ContextBuilder, MessageBus, PluginHost, PluginManifest, discover};
+use mochiclaw_core::{AgentLoop, ContextBuilder, MessageBus, PluginHost, discover};
 use mochiclaw_sdk::channel::{LoginParams, LoginResponse, QrStatusParams, QrStatusResponse};
 
 pub async fn start(config: Config, config_path: PathBuf) -> Result<()> {
@@ -54,12 +54,12 @@ pub async fn start(config: Config, config_path: PathBuf) -> Result<()> {
             // Get per-plugin config if configured
             let plugin_config = config
                 .plugins
-                .get(&plugin.name)
+                .get(&plugin.manifest.name)
                 .cloned()
                 .unwrap_or_default();
 
             match host.load_plugin(
-                &plugin.name,
+                &plugin.manifest.name,
                 &plugin.wasm_path,
                 &plugin.manifest,
                 &plugin_config,
@@ -118,35 +118,46 @@ pub async fn onboard(config_path: PathBuf) -> Result<()> {
 
 /// Login to a channel plugin
 pub async fn login(plugin_name: &str, mut config: Config, config_path: PathBuf) -> Result<()> {
-    // Find plugin paths
-    let wasm_name = plugin_name.replace("mochiclaw-", "mochiclaw_");
-    let wasm_path =
-        PathBuf::from("target/wasm32-unknown-unknown/release").join(format!("{}.wasm", wasm_name));
-    let manifest_path = PathBuf::from("plugins")
-        .join(plugin_name)
-        .join("manifest.toml");
-
-    if !wasm_path.exists() {
-        anyhow::bail!(
-            "plugin '{}' not found at {}. Run 'just build' first",
-            plugin_name,
-            wasm_path.display()
-        );
+    // Discover plugins from configured plugin directories
+    let mut discovered_plugin = None;
+    for dir in &config.runtime.plugin_dirs {
+        let plugin_base_dir = PathBuf::from(dir);
+        match discover(&plugin_base_dir) {
+            Ok(discovered) => {
+                if let Some(p) = discovered
+                    .into_iter()
+                    .find(|p| p.manifest.name == plugin_name)
+                {
+                    discovered_plugin = Some(p);
+                    break;
+                }
+            }
+            Err(e) => {
+                tracing::warn!("failed to scan plugin directory {}: {}", dir, e);
+            }
+        }
     }
 
-    // Load manifest (required)
-    let manifest = PluginManifest::from_file(&manifest_path)
-        .map_err(|e| anyhow::anyhow!("failed to load manifest for '{}': {}", plugin_name, e))?;
+    let (manifest, wasm_path) = match discovered_plugin {
+        Some(p) => (p.manifest, p.wasm_path),
+        None => {
+            anyhow::bail!(
+                "plugin '{}' not found in configured plugin_dirs: {:?}",
+                plugin_name,
+                config.runtime.plugin_dirs
+            );
+        }
+    };
 
-    // Load plugin
+    // Load plugin using manifest name
     let mut plugin_host = PluginHost::new();
-    plugin_host.load_plugin(plugin_name, &wasm_path, &manifest, &Default::default())?;
-    tracing::info!("loaded plugin '{}'", plugin_name);
+    plugin_host.load_plugin(&manifest.name, &wasm_path, &manifest, &Default::default())?;
+    tracing::info!("loaded plugin '{}'", manifest.name);
 
     // Call login function with empty config
     let resp: LoginResponse = {
         let login_params = LoginParams { config: Vec::new() };
-        plugin_host.call(plugin_name, "login", &login_params)?
+        plugin_host.call(&manifest.name, "login", &login_params)?
     };
 
     match resp.status.as_str() {
@@ -156,13 +167,13 @@ pub async fn login(plugin_name: &str, mut config: Config, config_path: PathBuf) 
                     "already logged in, token: {}...",
                     &token[..8.min(token.len())]
                 );
-                save_token_to_config(&mut config, plugin_name, &resp, &config_path)?;
+                save_token_to_config(&mut config, &manifest.name, &resp, &config_path)?;
             }
         }
         "need_qr" => {
             if let Some(qr_url) = &resp.qr_url {
                 println!();
-                println!("========== {} Login ==========", plugin_name);
+                println!("========== {} Login ==========", manifest.name);
                 println!();
                 println!("Scan this QR code with the channel app:");
                 println!();
@@ -179,7 +190,7 @@ pub async fn login(plugin_name: &str, mut config: Config, config_path: PathBuf) 
                             let params = QrStatusParams {
                                 temp_token: temp_token.clone(),
                             };
-                            plugin_host.call(plugin_name, "check_login", &params)?
+                            plugin_host.call(&manifest.name, "check_login", &params)?
                         };
 
                         match check_resp.status.as_str() {

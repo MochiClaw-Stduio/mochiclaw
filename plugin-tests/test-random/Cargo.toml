@@ -8,7 +8,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 extism-pdk.workspace = true
-mochiclaw-sdk = { path = "../../mochiclaw-sdk" }
+mochiclaw-sdk = { path = "../../sdk" }
 serde.workspace = true
 serde_json.workspace = true
 

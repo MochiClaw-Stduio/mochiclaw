@@ -16,9 +16,9 @@ Plugins can declare the following feature types:
 
 | Type | Description | Example |
 |------|-------------|---------|
-| `provider` | LLM Provider, provides AI model calling capability | `mochiclaw-openai` |
-| `channel` | Message channel, handles user message I/O | `mochiclaw-weixin` |
-| `tool` | Tools, provides various auxiliary capabilities | `mochiclaw-fs` |
+| `provider` | LLM Provider, provides AI model calling capability | `mochi-openai` |
+| `channel` | Message channel, handles user message I/O | `mochi-weixin` |
+| `tool` | Tools, provides various auxiliary capabilities | `mochi-fs` |
 | `command` | Commands, handles specific commands | - |
 
 ### 2. Capability System (Capabilities)
@@ -70,7 +70,7 @@ allowed_kv_read = ["plugin-a", "plugin-b"]  # Can read other plugins' KV
 Each plugin requires a `manifest.toml` file:
 
 ```toml
-name = "mochiclaw-fs"
+name = "mochi-fs"
 version = "0.1.0"
 description = "Filesystem tools: read_file, write_file, edit_file, list_dir"
 
@@ -201,7 +201,7 @@ cargo new --target wasm32-unknown-unknown my-plugin
 ### 2. Write manifest.toml
 
 ```toml
-name = "mochiclaw-my-plugin"
+name = "mochi-my-plugin"
 version = "0.1.0"
 description = "My custom plugin"
 
@@ -242,24 +242,24 @@ pub fn execute_tool(input: ToolExecutionRequest) -> FnResult<ToolExecutionRespon
 ### 4. Build
 
 ```bash
-cargo build --release --target wasm32-unknown-unknown -p mochiclaw-my-plugin
+cargo build --release --target wasm32-unknown-unknown -p mochi-my-plugin
 ```
 
 ### 5. Deploy
 
-Copy `target/wasm32-unknown-unknown/release/mochiclaw_my_plugin.wasm` and `manifest.toml` to the plugin directory.
+Copy `target/wasm32-unknown-unknown/release/mochi_my_plugin.wasm` and `manifest.toml` to the plugin directory.
 
 ## Configuration Override
 
 Users can override plugin-declared capabilities in `config.toml`:
 
 ```toml
-[plugins.mochiclaw-openai]
-[plugins.mochiclaw-openai.capabilities.network]
+[plugins.mochi-openai]
+[plugins.mochi-openai.capabilities.network]
 allowed_hosts = ["*.openai.com", "*.deepseek.com"]
 
-[plugins.mochiclaw-fs]
-[plugins.mochiclaw-fs.capabilities.fs]
+[plugins.mochi-fs]
+[plugins.mochi-fs.capabilities.fs]
 allowed_root = "/custom/path"
 ```
 

@@ -4,7 +4,7 @@ build-native:
 
 # Build WASM plugins
 build-plugin:
-    cargo build --release --target wasm32-unknown-unknown -p mochiclaw-openai -p mochiclaw-weixin -p mochiclaw-fs
+    cargo build --release --target wasm32-unknown-unknown -p mochi-openai -p mochi-weixin -p mochi-fs
 
 # Build test plugins (for integration tests)
 build-test-plugin:
@@ -22,16 +22,24 @@ setup-plugins:
     #!/bin/bash
     set -e
     mkdir -p ./target/plugins
-    for plugin_dir in plugins/mochiclaw-*/; do
-        plugin_name=$(basename "$plugin_dir")
-        target_dir="./target/plugins/$plugin_name"
-        mkdir -p "$target_dir"
-        if [ -f "$plugin_dir/manifest.toml" ]; then
-            cp "$plugin_dir/manifest.toml" "$target_dir/manifest.toml"
+    for plugin_dir in plugins/*/; do
+        if [ ! -f "$plugin_dir/manifest.toml" ]; then
+            continue
         fi
-        wasm_file="target/wasm32-unknown-unknown/release/${plugin_name//-/_}.wasm"
+        # Read plugin name from manifest.toml
+        manifest_name=$(sed -n 's/^name = "\(.*\)"/\1/p' "$plugin_dir/manifest.toml" | tr -d ' \r')
+        if [ -z "$manifest_name" ]; then
+            echo "Warning: could not read name from $plugin_dir/manifest.toml"
+            continue
+        fi
+        target_dir="./target/plugins/$manifest_name"
+        mkdir -p "$target_dir"
+        cp "$plugin_dir/manifest.toml" "$target_dir/manifest.toml"
+        # wasm filename: replace - with _ (mochi-weixin -> mochi_weixin)
+        wasm_name="${manifest_name//-/_}"
+        wasm_file="target/wasm32-unknown-unknown/release/${wasm_name}.wasm"
         if [ -f "$wasm_file" ]; then
-            cp "$wasm_file" "$target_dir/${plugin_name}.wasm"
+            cp "$wasm_file" "$target_dir/${manifest_name}.wasm"
         fi
     done
 
