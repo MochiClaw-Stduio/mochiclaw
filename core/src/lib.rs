@@ -2,7 +2,7 @@
 //!
 //! Core runtime components: MessageBus, AgentLoop.
 
-pub mod agent;
+pub mod agent_loop;
 pub mod bus;
 pub mod commands;
 pub mod context;
@@ -12,7 +12,7 @@ pub mod lambda_loop;
 pub mod poller;
 pub mod session;
 
-pub use agent::AgentLoop;
+pub use agent_loop::AgentLoop;
 pub use bus::MessageBus;
 pub use commands::{CommandRegistry, parse_command};
 pub use context::ContextBuilder;
