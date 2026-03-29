@@ -16,8 +16,8 @@ pub enum Error {
     #[error("http error: {0}")]
     Http(String),
 
-    #[error("plugin error: {0}")]
-    Plugin(String),
+    #[error("lambda error: {0}")]
+    Lambda(String),
 
     #[error("provider error: {0}")]
     Provider(String),

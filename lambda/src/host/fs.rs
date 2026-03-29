@@ -1,4 +1,4 @@
-//! Host FS functions for plugins
+//! Host FS functions for lambdas
 //!
 //! Uses MessagePack encoding for input/output structures.
 
@@ -42,7 +42,7 @@ pub struct FsListInput {
     pub max_entries: u64,
 }
 
-/// FS access context bound to a plugin
+/// FS access context bound to a lambda
 pub struct FsContext {
     /// Allowed root directory for filesystem operations (sandbox boundary)
     pub allowed_root: PathBuf,
@@ -358,7 +358,7 @@ pub fn fs_read_fn(ctx: FsContext) -> Function {
         [ValType::I64],
         [ValType::I64],
         UserData::new(ctx),
-        |plugin: &mut CurrentPlugin,
+        |lambda: &mut CurrentPlugin,
          inputs: &[Val],
          outputs: &mut [Val],
          user_data: UserData<FsContext>| {
@@ -377,30 +377,30 @@ pub fn fs_read_fn(ctx: FsContext) -> Function {
                 }
             };
 
-            // Read input from plugin memory
+            // Read input from lambda memory
             let input_offset = inputs.first().and_then(|v| v.i64()).unwrap_or(0) as u64;
             if input_offset == 0 {
                 let error = to_msgpack(&"Invalid input".to_string()).unwrap_or_default();
-                let _ = plugin.memory_set_val(&mut outputs[0], &error);
+                let _ = lambda.memory_set_val(&mut outputs[0], &error);
                 return Ok(());
             }
 
-            let handle = match plugin.memory_handle(input_offset) {
+            let handle = match lambda.memory_handle(input_offset) {
                 Some(h) => h,
                 None => {
                     let error =
                         to_msgpack(&"Invalid memory handle".to_string()).unwrap_or_default();
-                    let _ = plugin.memory_set_val(&mut outputs[0], &error);
+                    let _ = lambda.memory_set_val(&mut outputs[0], &error);
                     return Ok(());
                 }
             };
 
-            let bytes = match plugin.memory_bytes(handle) {
+            let bytes = match lambda.memory_bytes(handle) {
                 Ok(b) => b.to_vec(),
                 Err(_) => {
                     let error =
                         to_msgpack(&"Failed to read memory".to_string()).unwrap_or_default();
-                    let _ = plugin.memory_set_val(&mut outputs[0], &error);
+                    let _ = lambda.memory_set_val(&mut outputs[0], &error);
                     return Ok(());
                 }
             };
@@ -410,7 +410,7 @@ pub fn fs_read_fn(ctx: FsContext) -> Function {
                 None => {
                     let error =
                         to_msgpack(&"Failed to deserialize input".to_string()).unwrap_or_default();
-                    let _ = plugin.memory_set_val(&mut outputs[0], &error);
+                    let _ = lambda.memory_set_val(&mut outputs[0], &error);
                     return Ok(());
                 }
             };
@@ -422,7 +422,7 @@ pub fn fs_read_fn(ctx: FsContext) -> Function {
                 Ok(p) => p,
                 Err(e) => {
                     let error = to_msgpack(&format!("Error: {}", e)).unwrap_or_default();
-                    let _ = plugin.memory_set_val(&mut outputs[0], &error);
+                    let _ = lambda.memory_set_val(&mut outputs[0], &error);
                     return Ok(());
                 }
             };
@@ -431,7 +431,7 @@ pub fn fs_read_fn(ctx: FsContext) -> Function {
             if !ctx.can_read(&resolved) {
                 let error = to_msgpack(&format!("Permission denied: cannot read '{}'", input.path))
                     .unwrap_or_default();
-                let _ = plugin.memory_set_val(&mut outputs[0], &error);
+                let _ = lambda.memory_set_val(&mut outputs[0], &error);
                 return Ok(());
             }
 
@@ -439,7 +439,7 @@ pub fn fs_read_fn(ctx: FsContext) -> Function {
             let result = read_file_impl(&resolved, input.offset, input.limit);
 
             let output = to_msgpack(&result).unwrap_or_default();
-            let _ = plugin.memory_set_val(&mut outputs[0], &output);
+            let _ = lambda.memory_set_val(&mut outputs[0], &output);
             Ok(())
         },
     )
@@ -455,7 +455,7 @@ pub fn fs_write_fn(ctx: FsContext) -> Function {
         [ValType::I64],
         [ValType::I32],
         UserData::new(ctx),
-        |plugin: &mut CurrentPlugin,
+        |lambda: &mut CurrentPlugin,
          inputs: &[Val],
          outputs: &mut [Val],
          user_data: UserData<FsContext>| {
@@ -476,14 +476,14 @@ pub fn fs_write_fn(ctx: FsContext) -> Function {
                 }
             };
 
-            // Read input from plugin memory
+            // Read input from lambda memory
             let input_offset = inputs.first().and_then(|v| v.i64()).unwrap_or(0) as u64;
             if input_offset == 0 {
                 outputs[0] = Val::I32(1);
                 return Ok(());
             }
 
-            let handle = match plugin.memory_handle(input_offset) {
+            let handle = match lambda.memory_handle(input_offset) {
                 Some(h) => h,
                 None => {
                     outputs[0] = Val::I32(1);
@@ -491,7 +491,7 @@ pub fn fs_write_fn(ctx: FsContext) -> Function {
                 }
             };
 
-            let bytes = match plugin.memory_bytes(handle) {
+            let bytes = match lambda.memory_bytes(handle) {
                 Ok(b) => b.to_vec(),
                 Err(_) => {
                     outputs[0] = Val::I32(1);
@@ -566,7 +566,7 @@ pub fn fs_edit_fn(ctx: FsContext) -> Function {
         [ValType::I64],
         [ValType::I64],
         UserData::new(ctx),
-        |plugin: &mut CurrentPlugin,
+        |lambda: &mut CurrentPlugin,
          inputs: &[Val],
          outputs: &mut [Val],
          user_data: UserData<FsContext>| {
@@ -585,30 +585,30 @@ pub fn fs_edit_fn(ctx: FsContext) -> Function {
                 }
             };
 
-            // Read input from plugin memory
+            // Read input from lambda memory
             let input_offset = inputs.first().and_then(|v| v.i64()).unwrap_or(0) as u64;
             if input_offset == 0 {
                 let error = to_msgpack(&"Invalid input".to_string()).unwrap_or_default();
-                let _ = plugin.memory_set_val(&mut outputs[0], &error);
+                let _ = lambda.memory_set_val(&mut outputs[0], &error);
                 return Ok(());
             }
 
-            let handle = match plugin.memory_handle(input_offset) {
+            let handle = match lambda.memory_handle(input_offset) {
                 Some(h) => h,
                 None => {
                     let error =
                         to_msgpack(&"Invalid memory handle".to_string()).unwrap_or_default();
-                    let _ = plugin.memory_set_val(&mut outputs[0], &error);
+                    let _ = lambda.memory_set_val(&mut outputs[0], &error);
                     return Ok(());
                 }
             };
 
-            let bytes = match plugin.memory_bytes(handle) {
+            let bytes = match lambda.memory_bytes(handle) {
                 Ok(b) => b.to_vec(),
                 Err(_) => {
                     let error =
                         to_msgpack(&"Failed to read memory".to_string()).unwrap_or_default();
-                    let _ = plugin.memory_set_val(&mut outputs[0], &error);
+                    let _ = lambda.memory_set_val(&mut outputs[0], &error);
                     return Ok(());
                 }
             };
@@ -618,7 +618,7 @@ pub fn fs_edit_fn(ctx: FsContext) -> Function {
                 None => {
                     let error =
                         to_msgpack(&"Failed to deserialize input".to_string()).unwrap_or_default();
-                    let _ = plugin.memory_set_val(&mut outputs[0], &error);
+                    let _ = lambda.memory_set_val(&mut outputs[0], &error);
                     return Ok(());
                 }
             };
@@ -630,7 +630,7 @@ pub fn fs_edit_fn(ctx: FsContext) -> Function {
                 Ok(p) => p,
                 Err(e) => {
                     let error = to_msgpack(&format!("Error: {}", e)).unwrap_or_default();
-                    let _ = plugin.memory_set_val(&mut outputs[0], &error);
+                    let _ = lambda.memory_set_val(&mut outputs[0], &error);
                     return Ok(());
                 }
             };
@@ -639,7 +639,7 @@ pub fn fs_edit_fn(ctx: FsContext) -> Function {
             if !ctx.can_write(&resolved) {
                 let error = to_msgpack(&format!("Permission denied: cannot edit '{}'", input.path))
                     .unwrap_or_default();
-                let _ = plugin.memory_set_val(&mut outputs[0], &error);
+                let _ = lambda.memory_set_val(&mut outputs[0], &error);
                 return Ok(());
             }
 
@@ -652,7 +652,7 @@ pub fn fs_edit_fn(ctx: FsContext) -> Function {
             );
 
             let output = to_msgpack(&result).unwrap_or_default();
-            let _ = plugin.memory_set_val(&mut outputs[0], &output);
+            let _ = lambda.memory_set_val(&mut outputs[0], &output);
             Ok(())
         },
     )
@@ -668,7 +668,7 @@ pub fn fs_list_fn(ctx: FsContext) -> Function {
         [ValType::I64],
         [ValType::I64],
         UserData::new(ctx),
-        |plugin: &mut CurrentPlugin,
+        |lambda: &mut CurrentPlugin,
          inputs: &[Val],
          outputs: &mut [Val],
          user_data: UserData<FsContext>| {
@@ -687,30 +687,30 @@ pub fn fs_list_fn(ctx: FsContext) -> Function {
                 }
             };
 
-            // Read input from plugin memory
+            // Read input from lambda memory
             let input_offset = inputs.first().and_then(|v| v.i64()).unwrap_or(0) as u64;
             if input_offset == 0 {
                 let error = to_msgpack(&"Invalid input".to_string()).unwrap_or_default();
-                let _ = plugin.memory_set_val(&mut outputs[0], &error);
+                let _ = lambda.memory_set_val(&mut outputs[0], &error);
                 return Ok(());
             }
 
-            let handle = match plugin.memory_handle(input_offset) {
+            let handle = match lambda.memory_handle(input_offset) {
                 Some(h) => h,
                 None => {
                     let error =
                         to_msgpack(&"Invalid memory handle".to_string()).unwrap_or_default();
-                    let _ = plugin.memory_set_val(&mut outputs[0], &error);
+                    let _ = lambda.memory_set_val(&mut outputs[0], &error);
                     return Ok(());
                 }
             };
 
-            let bytes = match plugin.memory_bytes(handle) {
+            let bytes = match lambda.memory_bytes(handle) {
                 Ok(b) => b.to_vec(),
                 Err(_) => {
                     let error =
                         to_msgpack(&"Failed to read memory".to_string()).unwrap_or_default();
-                    let _ = plugin.memory_set_val(&mut outputs[0], &error);
+                    let _ = lambda.memory_set_val(&mut outputs[0], &error);
                     return Ok(());
                 }
             };
@@ -720,7 +720,7 @@ pub fn fs_list_fn(ctx: FsContext) -> Function {
                 None => {
                     let error =
                         to_msgpack(&"Failed to deserialize input".to_string()).unwrap_or_default();
-                    let _ = plugin.memory_set_val(&mut outputs[0], &error);
+                    let _ = lambda.memory_set_val(&mut outputs[0], &error);
                     return Ok(());
                 }
             };
@@ -732,7 +732,7 @@ pub fn fs_list_fn(ctx: FsContext) -> Function {
                 Ok(p) => p,
                 Err(e) => {
                     let error = to_msgpack(&format!("Error: {}", e)).unwrap_or_default();
-                    let _ = plugin.memory_set_val(&mut outputs[0], &error);
+                    let _ = lambda.memory_set_val(&mut outputs[0], &error);
                     return Ok(());
                 }
             };
@@ -741,7 +741,7 @@ pub fn fs_list_fn(ctx: FsContext) -> Function {
             if !ctx.can_read(&resolved) {
                 let error = to_msgpack(&format!("Permission denied: cannot list '{}'", input.path))
                     .unwrap_or_default();
-                let _ = plugin.memory_set_val(&mut outputs[0], &error);
+                let _ = lambda.memory_set_val(&mut outputs[0], &error);
                 return Ok(());
             }
 
@@ -749,7 +749,7 @@ pub fn fs_list_fn(ctx: FsContext) -> Function {
             let result = list_dir_impl(&resolved, input.recursive, input.max_entries);
 
             let output = to_msgpack(&result).unwrap_or_default();
-            let _ = plugin.memory_set_val(&mut outputs[0], &output);
+            let _ = lambda.memory_set_val(&mut outputs[0], &output);
             Ok(())
         },
     )
@@ -1635,7 +1635,7 @@ mod fs_integration_tests {
     use std::fs;
     use tempfile::TempDir;
 
-    // WASM file for test-fs plugin
+    // WASM file for test-fs lambda
     const TEST_FS_WASM: &[u8] =
         include_bytes!("../../../target/wasm32-unknown-unknown/release/test_fs.wasm");
 
@@ -1650,7 +1650,7 @@ mod fs_integration_tests {
         )
     }
 
-    fn run_plugin_with_fs<F>(root: &std::path::Path, f: F)
+    fn run_lambda_with_fs<F>(root: &std::path::Path, f: F)
     where
         F: FnOnce(&mut Plugin),
     {
@@ -1658,8 +1658,8 @@ mod fs_integration_tests {
         let functions = fs_functions(ctx);
 
         let manifest = Manifest::new([Wasm::data(TEST_FS_WASM)]);
-        let mut plugin = Plugin::new(manifest, functions, true).unwrap();
-        f(&mut plugin);
+        let mut lambda = Plugin::new(manifest, functions, true).unwrap();
+        f(&mut lambda);
     }
 
     #[derive(Debug, Deserialize)]
@@ -1673,8 +1673,8 @@ mod fs_integration_tests {
         let temp = TempDir::new().unwrap();
         let root = temp.path().canonicalize().unwrap();
 
-        run_plugin_with_fs(&root, |plugin: &mut Plugin| {
-            let result: String = plugin.call("test_fs_write_read", "").unwrap();
+        run_lambda_with_fs(&root, |lambda: &mut Plugin| {
+            let result: String = lambda.call("test_fs_write_read", "").unwrap();
             let result: TestResult = serde_json::from_str(&result).unwrap();
             assert!(result.success, "fs_write_read failed: {}", result.message);
         });
@@ -1685,8 +1685,8 @@ mod fs_integration_tests {
         let temp = TempDir::new().unwrap();
         let root = temp.path().canonicalize().unwrap();
 
-        run_plugin_with_fs(&root, |plugin: &mut Plugin| {
-            let result: String = plugin.call("test_fs_edit", "").unwrap();
+        run_lambda_with_fs(&root, |lambda: &mut Plugin| {
+            let result: String = lambda.call("test_fs_edit", "").unwrap();
             let result: TestResult = serde_json::from_str(&result).unwrap();
             assert!(result.success, "fs_edit failed: {}", result.message);
             assert!(
@@ -1702,8 +1702,8 @@ mod fs_integration_tests {
         let temp = TempDir::new().unwrap();
         let root = temp.path().canonicalize().unwrap();
 
-        run_plugin_with_fs(&root, |plugin: &mut Plugin| {
-            let result: String = plugin.call("test_fs_edit_all", "").unwrap();
+        run_lambda_with_fs(&root, |lambda: &mut Plugin| {
+            let result: String = lambda.call("test_fs_edit_all", "").unwrap();
             let result: TestResult = serde_json::from_str(&result).unwrap();
             assert!(result.success, "fs_edit_all failed: {}", result.message);
             assert!(
@@ -1725,8 +1725,8 @@ mod fs_integration_tests {
         fs::create_dir_all(root.join("subdir")).unwrap();
         fs::write(root.join("subdir/nested.txt"), "nested").unwrap();
 
-        run_plugin_with_fs(&root, |plugin: &mut Plugin| {
-            let result: String = plugin.call("test_fs_list", "").unwrap();
+        run_lambda_with_fs(&root, |lambda: &mut Plugin| {
+            let result: String = lambda.call("test_fs_list", "").unwrap();
             let result: TestResult = serde_json::from_str(&result).unwrap();
             assert!(result.success, "fs_list failed: {}", result.message);
         });
@@ -1743,8 +1743,8 @@ mod fs_integration_tests {
         fs::write(root.join("a/b/file.txt"), "content").unwrap();
         fs::write(root.join("a/b/c/file.txt"), "content").unwrap();
 
-        run_plugin_with_fs(&root, |plugin: &mut Plugin| {
-            let result: String = plugin.call("test_fs_list_recursive", "").unwrap();
+        run_lambda_with_fs(&root, |lambda: &mut Plugin| {
+            let result: String = lambda.call("test_fs_list_recursive", "").unwrap();
             let result: TestResult = serde_json::from_str(&result).unwrap();
             assert!(
                 result.success,
@@ -1764,8 +1764,8 @@ mod fs_integration_tests {
         let temp = TempDir::new().unwrap();
         let root = temp.path().canonicalize().unwrap();
 
-        run_plugin_with_fs(&root, |plugin: &mut Plugin| {
-            let result: String = plugin.call("test_fs_read_pagination", "").unwrap();
+        run_lambda_with_fs(&root, |lambda: &mut Plugin| {
+            let result: String = lambda.call("test_fs_read_pagination", "").unwrap();
             let result: TestResult = serde_json::from_str(&result).unwrap();
             assert!(
                 result.success,

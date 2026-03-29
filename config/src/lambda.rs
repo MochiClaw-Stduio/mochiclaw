@@ -5,7 +5,7 @@ use serde::Serialize;
 
 /// Lambda configuration for all lambdas (公共配置)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename = "plugins")]
+#[serde(rename = "lambdas")]
 pub struct LambdaConfig {
     #[serde(default = "default_enabled")]
     pub enabled: bool,

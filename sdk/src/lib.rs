@@ -1,6 +1,6 @@
 //! Mochiclaw SDK
 //!
-//! Shared types for both host and plugins.
+//! Shared types for both host and lambdas.
 
 pub mod channel;
 pub mod command;

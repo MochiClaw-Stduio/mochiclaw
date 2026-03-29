@@ -1,32 +1,32 @@
-# Plugin Tutorial
+# 插件教程
 
-[简体中文](../zh/plugin-tutorial.md) | English
+English | [简体中文](../zh/lambda-tutorial.md)
 
 ---
 
-## Overview
+## 概述
 
-This tutorial walks through creating a new tool plugin from scratch.
+本教程逐步创建一个新的工具插件。
 
-## Prerequisites
+## 前置条件
 
 ```bash
 rustup target add wasm32-unknown-unknown
 ```
 
-## Step 1: Create Plugin Project
+## 步骤 1: 创建插件项目
 
-Create a new Rust project in the `plugins/` directory:
+在 `lambdas/` 目录下创建新的 Rust 项目：
 
 ```bash
-cargo new --target wasm32-unknown-unknown plugins/mochi-my-plugin
+cargo new --target wasm32-unknown-unknown lambdas/mochiclaw-my-lambda
 ```
 
-## Step 2: Edit Cargo.toml
+## 步骤 2: 编辑 Cargo.toml
 
 ```toml
 [package]
-name = "mochi-my-plugin"
+name = "mochi-my-lambda"
 version = "0.1.0"
 edition = "2021"
 
@@ -40,12 +40,12 @@ serde_json = "1"
 extism-pdk = "1"
 ```
 
-## Step 3: Create manifest.toml
+## 步骤 3: 创建 manifest.toml
 
 ```toml
-name = "mochi-my-plugin"
+name = "mochi-my-lambda"
 version = "0.1.0"
-description = "My custom tool plugin"
+description = "My custom tool lambda"
 
 [capabilities.network]
 enabled = true
@@ -61,7 +61,7 @@ write_whitelist = ["${workspace}"]
 tool = true
 ```
 
-## Step 4: Implement Plugin
+## 步骤 4: 实现插件
 
 ```rust
 // src/lib.rs
@@ -69,14 +69,14 @@ use mochiclaw_sdk::tool::{Tool, ToolExecutionRequest, ToolExecutionResponse};
 use mochiclaw_sdk::{FnResult, plugin_fn};
 use std::collections::HashMap;
 
-/// Return the list of tools provided by this plugin
+/// 返回此插件提供的工具列表
 #[plugin_fn]
 pub fn get_tools() -> FnResult<String> {
     let tools = vec![make_my_tool()];
     Ok(serde_json::to_string(&tools).unwrap())
 }
 
-/// Execute a tool by name with the provided arguments
+/// 按名称执行工具
 #[plugin_fn]
 pub fn execute_tool(request: ToolExecutionRequest) -> FnResult<ToolExecutionResponse> {
     let result = match request.name.as_str() {
@@ -117,35 +117,35 @@ fn do_something(args: &HashMap<String, serde_json::Value>) -> Result<String, Str
         .and_then(|v| v.as_str())
         .ok_or("Missing 'input' argument")?;
 
-    // Your logic here
+    // 你的逻辑在这里
     Ok(format!("Processed: {}", input))
 }
 ```
 
-## Step 5: Build
+## 步骤 5: 构建
 
 ```bash
-cargo build --release --target wasm32-unknown-unknown -p mochi-my-plugin
+cargo build --release --target wasm32-unknown-unknown -p mochi-my-lambda
 ```
 
-Output: `target/wasm32-unknown-unknown/release/mochi_my_plugin.wasm`
+输出: `target/wasm32-unknown-unknown/release/mochi_my_lambda.wasm`
 
-## Step 6: Deploy
+## 步骤 6: 部署
 
-Copy the WASM file and `manifest.toml` to your plugin directory:
+复制 WASM 文件和 `manifest.toml` 到插件目录：
 
 ```bash
-cp target/wasm32-unknown-unknown/release/mochi_my_plugin.wasm \
-   ./target/plugins/
-cp plugins/mochi-my-plugin/manifest.toml \
-   ./target/plugins/
+cp target/wasm32-unknown-unknown/release/mochi_my_lambda.wasm \
+   ./target/lambdas/
+cp lambdas/mochi-my-lambda/manifest.toml \
+   ./target/lambdas/
 ```
 
-## Plugin Types
+## 插件类型
 
-### Tool Plugin
+### 工具插件
 
-Provides tools to the agent:
+向 agent 提供工具：
 
 ```rust
 #[plugin_fn]
@@ -155,21 +155,21 @@ pub fn get_tools() -> FnResult<String>
 pub fn execute_tool(request: ToolExecutionRequest) -> FnResult<ToolExecutionResponse>
 ```
 
-### Provider Plugin
+### Provider 插件
 
-Provides LLM access:
+提供 LLM 访问：
 
 ```rust
 #[plugin_fn]
 pub fn chat(request: ChatRequest) -> FnResult<ChatResponse>
 
 #[plugin_fn]
-pub fn chat_stream(request: ChatRequest) -> FnResult<ChatResponse>  // streaming
+pub fn chat_stream(request: ChatRequest) -> FnResult<ChatResponse>  // 流式
 ```
 
-### Channel Plugin
+### Channel 插件
 
-Handles messaging:
+处理消息：
 
 ```rust
 #[plugin_fn]
@@ -182,9 +182,9 @@ pub fn send_text(params: SendTextParams) -> FnResult<SendResponse>
 pub fn set_typing(params: SetTypingParams) -> FnResult<()>
 ```
 
-## Using Host Functions
+## 使用 Host Functions
 
-Access capabilities from `mochiclaw_sdk::host`:
+从 `mochiclaw_sdk::host` 访问能力：
 
 ```rust
 use mochiclaw_sdk::host::http::{HttpClient, HttpError};
@@ -192,41 +192,41 @@ use mochiclaw_sdk::host::fs::{fs_read, fs_write};
 use mochiclaw_sdk::host::kv::{kv_get, kv_set};
 use mochiclaw_sdk::host::random::{rand_u32, rand_bytes};
 
-// HTTP request
+// HTTP 请求
 let resp = HttpClient::get("https://api.example.com/data").send()?;
 
-// File read
+// 文件读取
 let content = fs_read("file.txt", workspace, 0, 100)?;
 
-// KV store
+// KV 存储
 kv_set("key", &my_value)?;
 let value: MyType = kv_get("key")?;
 
-// Random
+// 随机数
 let n = rand_u32();
 ```
 
-## Workspace Configuration
+## 配置获取
 
-Plugins receive config from the host via `config::get()`:
+插件通过 `config::get()` 从主机获取配置：
 
 ```rust
 use mochiclaw_sdk::config;
 
-// Get workspace (injected by host)
+// 获取 workspace（由主机注入）
 let workspace = match config::get("workspace") {
     Ok(Some(w)) => w,
     _ => ".".to_string(),
 };
 ```
 
-## Error Handling
+## 错误处理
 
 ```rust
-// Return error in tool execution
+// 在工具执行中返回错误
 Err("Something went wrong".into())
 
-// Or in ToolExecutionResponse
+// 或在 ToolExecutionResponse 中
 Ok(ToolExecutionResponse {
     result: String::new(),
     error: Some("Error message".to_string()),

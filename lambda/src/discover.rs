@@ -1,32 +1,32 @@
-//! Plugin discovery - scans directories for plugins
+//! Lambda discovery - scans directories for lambdas
 
-use crate::manifest::PluginManifest;
+use crate::manifest::LambdaManifest;
 use std::path::{Path, PathBuf};
 
-/// Discovered plugin info
+/// Discovered lambda info
 #[derive(Debug)]
-pub struct DiscoveredPlugin {
-    pub manifest: PluginManifest,
+pub struct DiscoveredLambda {
+    pub manifest: LambdaManifest,
     pub wasm_path: PathBuf,
 }
 
-/// Discover plugins from a directory
+/// Discover lambdas from a directory
 ///
 /// Scans subdirectories of the given path, looking for:
-/// - A `manifest.toml` file to read plugin metadata
+/// - A `manifest.toml` file to read lambda metadata
 /// - A corresponding `.wasm` file in the target directory
 ///
-/// Returns a list of discovered plugins that have `features.provider` or `features.channel` set.
-pub fn discover(plugin_dir: &Path) -> Result<Vec<DiscoveredPlugin>, std::io::Error> {
-    let mut plugins = Vec::new();
+/// Returns a list of discovered lambdas that have `features.provider` or `features.channel` set.
+pub fn discover(lambda_dir: &Path) -> Result<Vec<DiscoveredLambda>, std::io::Error> {
+    let mut lambdas = Vec::new();
 
-    if !plugin_dir.exists() {
-        tracing::warn!("plugin directory does not exist: {}", plugin_dir.display());
-        return Ok(plugins);
+    if !lambda_dir.exists() {
+        tracing::warn!("lambda directory does not exist: {}", lambda_dir.display());
+        return Ok(lambdas);
     }
 
-    // Scan subdirectories for plugins
-    for entry in std::fs::read_dir(plugin_dir)? {
+    // Scan subdirectories for lambdas
+    for entry in std::fs::read_dir(lambda_dir)? {
         let entry = entry?;
         let entry_path = entry.path();
 
@@ -36,7 +36,7 @@ pub fn discover(plugin_dir: &Path) -> Result<Vec<DiscoveredPlugin>, std::io::Err
 
         // Check for manifest.toml
         let manifest_path = entry_path.join("manifest.toml");
-        let manifest = match PluginManifest::from_file(&manifest_path) {
+        let manifest = match LambdaManifest::from_file(&manifest_path) {
             Ok(m) => m,
             Err(e) => {
                 tracing::warn!(
@@ -48,7 +48,7 @@ pub fn discover(plugin_dir: &Path) -> Result<Vec<DiscoveredPlugin>, std::io::Err
             }
         };
 
-        // Check if this plugin should be loaded
+        // Check if this lambda should be loaded
         if !manifest.features.provider
             && !manifest.features.channel
             && !manifest.features.command
@@ -73,11 +73,11 @@ pub fn discover(plugin_dir: &Path) -> Result<Vec<DiscoveredPlugin>, std::io::Err
             continue;
         }
 
-        plugins.push(DiscoveredPlugin {
+        lambdas.push(DiscoveredLambda {
             manifest,
             wasm_path,
         });
     }
 
-    Ok(plugins)
+    Ok(lambdas)
 }

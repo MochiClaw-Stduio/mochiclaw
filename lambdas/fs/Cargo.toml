@@ -2,7 +2,7 @@
 name = "mochi-fs"
 version.workspace = true
 edition.workspace = true
-description = "Filesystem tool plugin for Mochiclaw"
+description = "Filesystem tool lambda for Mochiclaw"
 
 [lib]
 crate-type = ["cdylib"]

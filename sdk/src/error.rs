@@ -24,8 +24,8 @@ impl Error {
         Self::new("PROVIDER", msg)
     }
 
-    pub fn plugin(msg: &str) -> Self {
-        Self::new("PLUGIN", msg)
+    pub fn lambda(msg: &str) -> Self {
+        Self::new("LAMBDA", msg)
     }
 }
 

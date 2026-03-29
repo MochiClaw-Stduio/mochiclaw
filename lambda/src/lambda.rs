@@ -1,14 +1,14 @@
-//! Plugin Host - manages extism WASM plugins using Pool for concurrency
+//! Lambda Host - manages extism WASM lambdas using Pool for concurrency
 //!
-//! This module provides concurrent plugin execution via extism's Pool mechanism.
-//! Each plugin type gets its own Pool, allowing multiple instances to run simultaneously.
+//! This module provides concurrent lambda execution via extism's Pool mechanism.
+//! Each lambda type gets its own Pool, allowing multiple instances to run simultaneously.
 
-use crate::context::{PluginContext, PluginContextMap};
-use crate::discover::DiscoveredPlugin;
+use crate::context::{LambdaContext, LambdaContextMap};
+use crate::discover::DiscoveredLambda;
 use crate::error::Error;
 use crate::host::fs::FsContext;
-use crate::host::kv::PluginKV;
-use crate::manifest::PluginManifest;
+use crate::host::kv::LambdaKV;
+use crate::manifest::LambdaManifest;
 use extism::{CompiledPlugin, Manifest, Plugin, PluginBuilder, Pool, PoolBuilder, Wasm};
 use extism_convert::{FromBytesOwned, ToBytes};
 use mochiclaw_config::LambdaConfig;
@@ -18,33 +18,33 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// PluginHost manages multiple plugin pools for concurrent execution
-pub struct PluginHost {
-    /// Compiled plugins (contains JIT compiled engine) - used to create new instances
+/// LambdaHost manages multiple lambda pools for concurrent execution
+pub struct LambdaHost {
+    /// Compiled lambdas (contains JIT compiled engine) - used to create new instances
     compiled: HashMap<String, CompiledPlugin>,
-    /// Plugin pools for concurrent execution
+    /// Lambda pools for concurrent execution
     pools: HashMap<String, Pool>,
-    /// KV store for plugin state
-    kv: Arc<PluginKV>,
+    /// KV store for lambda state
+    kv: Arc<LambdaKV>,
     /// Fallback HTTP proxy URL (from HTTP_PROXY env var when use_system_proxy=true)
     fallback_proxy_url: Option<String>,
     /// Whether to use system proxy when fallback_proxy_url is None
     use_system_proxy: bool,
-    /// Plugin contexts (manifest + config merged)
-    contexts: PluginContextMap,
-    /// Workspace directory for fs plugins
+    /// Lambda contexts (manifest + config merged)
+    contexts: LambdaContextMap,
+    /// Workspace directory for fs lambdas
     workspace: Option<String>,
 }
 
-impl PluginHost {
+impl LambdaHost {
     pub fn new() -> Self {
         Self {
             compiled: HashMap::new(),
             pools: HashMap::new(),
-            kv: Arc::new(PluginKV::new()),
+            kv: Arc::new(LambdaKV::new()),
             fallback_proxy_url: None,
             use_system_proxy: false,
-            contexts: PluginContextMap::new(),
+            contexts: LambdaContextMap::new(),
             workspace: None,
         }
     }
@@ -56,7 +56,7 @@ impl PluginHost {
         self
     }
 
-    /// Set the workspace directory for fs plugins
+    /// Set the workspace directory for fs lambdas
     pub fn with_workspace(mut self, workspace: String) -> Self {
         self.workspace = Some(workspace);
         self
@@ -67,20 +67,20 @@ impl PluginHost {
         self.workspace = Some(workspace);
     }
 
-    /// Load a plugin with its manifest and per-plugin config
+    /// Load a lambda with its manifest and per-lambda config
     ///
     /// User config capabilities override manifest capabilities:
     /// - Boolean/string scalars: user override takes precedence (if set)
     /// - Lists: user items are appended to manifest's list
-    pub fn load_plugin(
+    pub fn load_lambda(
         &mut self,
         name: &str,
         wasm_path: &Path,
-        manifest: &PluginManifest,
+        manifest: &LambdaManifest,
         config: &LambdaConfig,
     ) -> Result<(), Error> {
         if self.compiled.contains_key(name) {
-            return Err(Error::Plugin(format!("plugin '{}' already loaded", name)));
+            return Err(Error::Lambda(format!("lambda '{}' already loaded", name)));
         }
 
         // Merge manifest capabilities with user overrides
@@ -90,7 +90,7 @@ impl PluginHost {
         };
 
         let wasm_bytes = std::fs::read(wasm_path)
-            .map_err(|e| Error::Plugin(format!("failed to read {}: {}", wasm_path.display(), e)))?;
+            .map_err(|e| Error::Lambda(format!("failed to read {}: {}", wasm_path.display(), e)))?;
 
         // Build extism Manifest with allowed hosts
         let mut extism_manifest = Manifest::new([Wasm::Data {
@@ -99,18 +99,18 @@ impl PluginHost {
         }])
         .with_allowed_hosts(capabilities.network.allowed_hosts.iter().cloned());
 
-        // Inject workspace config if set (for fs plugins)
+        // Inject workspace config if set (for fs lambdas)
         if let Some(ref workspace) = self.workspace {
             extism_manifest = extism_manifest.with_config_key("workspace", workspace.clone());
         }
 
-        // Determine effective proxy: per-plugin proxy_url > fallback_proxy_url
+        // Determine effective proxy: per-lambda proxy_url > fallback_proxy_url
         let effective_proxy = config
             .proxy_url
             .clone()
             .or_else(|| self.fallback_proxy_url.clone());
         tracing::debug!(
-            "loading plugin '{}', effective_proxy={:?}",
+            "loading lambda '{}', effective_proxy={:?}",
             name,
             effective_proxy
         );
@@ -162,7 +162,7 @@ impl PluginHost {
         let host_funcs = builder.build();
 
         tracing::debug!(
-            "registering {} host functions for plugin '{}'",
+            "registering {} host functions for lambda '{}'",
             host_funcs.len(),
             name
         );
@@ -174,7 +174,7 @@ impl PluginHost {
             );
         }
 
-        // Build plugin builder
+        // Build lambda builder
         let builder = PluginBuilder::new(extism_manifest)
             .with_wasi(false)
             .with_functions(host_funcs);
@@ -183,31 +183,31 @@ impl PluginHost {
         let compiled = builder
             .clone()
             .compile()
-            .map_err(|e| Error::Plugin(format!("failed to compile plugin '{}': {}", name, e)))?;
+            .map_err(|e| Error::Lambda(format!("failed to compile lambda '{}': {}", name, e)))?;
 
-        // Create pool for this plugin
+        // Create pool for this lambda
         // Note: CompiledPlugin is Clone (contains shared JIT engine), so we clone for the factory
         let compiled_for_pool = compiled.clone();
         let pool = PoolBuilder::new()
             .with_max_instances(std::thread::available_parallelism().unwrap().into())
             .build(move || {
                 Plugin::new_from_compiled(&compiled_for_pool)
-                    .map_err(|e| anyhow::anyhow!("failed to create plugin instance: {}", e))
+                    .map_err(|e| anyhow::anyhow!("failed to create lambda instance: {}", e))
             });
 
         self.compiled.insert(name.to_string(), compiled);
         self.pools.insert(name.to_string(), pool);
 
         tracing::info!(
-            "loaded plugin '{}' from {} (network: {:?}, fs: {:?})",
+            "loaded lambda '{}' from {} (network: {:?}, fs: {:?})",
             name,
             wasm_path.display(),
             capabilities.network.enabled,
             capabilities.fs.enabled
         );
 
-        // Store plugin context (merged manifest + config)
-        let merged_manifest = PluginManifest {
+        // Store lambda context (merged manifest + config)
+        let merged_manifest = LambdaManifest {
             name: manifest.name.clone(),
             version: manifest.version.clone(),
             description: manifest.description.clone(),
@@ -215,15 +215,15 @@ impl PluginHost {
             features: manifest.features.clone(),
             settings: manifest.settings.clone(),
         };
-        let ctx = PluginContext::new(merged_manifest, config.clone(), self.use_system_proxy);
+        let ctx = LambdaContext::new(merged_manifest, config.clone(), self.use_system_proxy);
         self.contexts.insert(name.to_string(), ctx);
 
         Ok(())
     }
 
-    /// Call a plugin function with typed input/output, handling MessagePack serialization automatically.
+    /// Call a lambda function with typed input/output, handling MessagePack serialization automatically.
     ///
-    /// This is the preferred method for calling plugin functions - it handles
+    /// This is the preferred method for calling lambda functions - it handles
     /// serialization of the input and deserialization of the output automatically.
     ///
     /// # Type Parameters
@@ -244,26 +244,26 @@ impl PluginHost {
         let pool = self
             .pools
             .get(name)
-            .ok_or_else(|| Error::Plugin(format!("plugin '{}' not found", name)))?;
+            .ok_or_else(|| Error::Lambda(format!("lambda '{}' not found", name)))?;
 
         let timeout = Duration::from_secs(120);
-        let mut plugin = pool
+        let mut lambda = pool
             .get(timeout)
-            .map_err(|e| Error::Plugin(format!("pool get timeout: {}", e)))?
-            .ok_or_else(|| Error::Plugin("pool get timeout".into()))?;
+            .map_err(|e| Error::Lambda(format!("pool get timeout: {}", e)))?
+            .ok_or_else(|| Error::Lambda("pool get timeout".into()))?;
 
-        plugin
+        lambda
             .call(function, input)
-            .map_err(|e| Error::Plugin(format!("call failed: {}", e)))
+            .map_err(|e| Error::Lambda(format!("call failed: {}", e)))
     }
 
-    /// Call a tool function on a plugin.
+    /// Call a tool function on a lambda.
     ///
     /// This is a convenience method specifically for tool execution that constructs
-    /// the ToolExecutionRequest internally and calls the plugin's `execute_tool` function.
+    /// the ToolExecutionRequest internally and calls the lambda's `execute_tool` function.
     pub fn call_tool(
         &self,
-        plugin_name: &str,
+        lambda_name: &str,
         tool_name: &str,
         arguments: &HashMap<String, serde_json::Value>,
     ) -> Result<ToolExecutionResponse, Error> {
@@ -271,24 +271,24 @@ impl PluginHost {
             name: tool_name.to_string(),
             arguments: arguments.clone(),
         };
-        self.call(plugin_name, "execute_tool", &request)
+        self.call(lambda_name, "execute_tool", &request)
     }
 
-    pub fn has_plugin(&self, name: &str) -> bool {
+    pub fn has_lambda(&self, name: &str) -> bool {
         self.pools.contains_key(name)
     }
 
-    pub fn plugin_count(&self) -> usize {
+    pub fn lambda_count(&self) -> usize {
         self.pools.len()
     }
 
-    /// Get a list of all loaded plugin names
-    pub fn plugin_names(&self) -> Vec<String> {
+    /// Get a list of all loaded lambda names
+    pub fn lambda_names(&self) -> Vec<String> {
         self.pools.keys().cloned().collect()
     }
 
-    /// Get a list of plugin names that declared features.tool = true
-    pub fn tool_plugins(&self) -> Vec<String> {
+    /// Get a list of lambda names that declared features.tool = true
+    pub fn tool_lambdas(&self) -> Vec<String> {
         self.contexts
             .iter()
             .filter(|(_, ctx)| ctx.manifest.features.tool)
@@ -296,28 +296,28 @@ impl PluginHost {
             .collect()
     }
 
-    /// Get the plugin context (manifest + config) for a loaded plugin
-    pub fn plugin_context(&self, name: &str) -> Option<&PluginContext> {
+    /// Get the lambda context (manifest + config) for a loaded lambda
+    pub fn lambda_context(&self, name: &str) -> Option<&LambdaContext> {
         self.contexts.get(name)
     }
 
-    /// Load a discovered plugin with default config
-    pub fn load_discovered(&mut self, plugin: DiscoveredPlugin) -> Result<(), Error> {
-        self.load_plugin(
-            &plugin.manifest.name,
-            &plugin.wasm_path,
-            &plugin.manifest,
+    /// Load a discovered lambda with default config
+    pub fn load_discovered(&mut self, lambda: DiscoveredLambda) -> Result<(), Error> {
+        self.load_lambda(
+            &lambda.manifest.name,
+            &lambda.wasm_path,
+            &lambda.manifest,
             &LambdaConfig::default(),
         )
     }
 
     /// Get a reference to the KV store
-    pub fn kv(&self) -> Arc<PluginKV> {
+    pub fn kv(&self) -> Arc<LambdaKV> {
         self.kv.clone()
     }
 }
 
-impl Default for PluginHost {
+impl Default for LambdaHost {
     fn default() -> Self {
         Self::new()
     }

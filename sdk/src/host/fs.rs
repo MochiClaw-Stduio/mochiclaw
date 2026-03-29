@@ -1,6 +1,6 @@
-//! Host FS functions - safe wrappers for plugin use
+//! Host FS functions - safe wrappers for lambda use
 //!
-//! Provides typed access to filesystem operations from plugins.
+//! Provides typed access to filesystem operations from lambdas.
 
 use extism_pdk::*;
 use rmp_serde::{Deserializer, Serializer};

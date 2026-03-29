@@ -19,7 +19,7 @@ max_iterations = 40
 workspace = "./workspace"
 
 [runtime]
-plugin_dirs = ["./target/plugins"]
+lambda_dirs = ["./target/lambdas"]
 
 [runtime.log]
 level = "info"
@@ -29,7 +29,7 @@ max_age_days = 30
 [runtime.network]
 use_system_proxy = false
 
-[plugins.mochi-openai]
+[lambdas.mochi-openai]
 proxy_url = "http://127.0.0.1:7890"
 
 [channels.mochi-weixin]
@@ -62,7 +62,7 @@ api_key = "sk-..."
 
 | 字段 | 类型 | 默认值 | 描述 |
 |------|------|--------|------|
-| `plugin_dirs` | array | `[]` | 搜索插件的目录 |
+| `lambda_dirs` | array | `[]` | 搜索插件的目录 |
 
 ### `[runtime.log]`
 
@@ -78,7 +78,7 @@ api_key = "sk-..."
 |------|------|--------|------|
 | `use_system_proxy` | bool | `false` | 使用系统 HTTP 代理 |
 
-## `[plugins]`
+## `[lambdas]`
 
 每个插件的配置。Key 是插件名。
 
@@ -87,7 +87,7 @@ api_key = "sk-..."
 | `enabled` | bool | `true` | 启用/禁用插件 |
 | `proxy_url` | string | - | 每个插件的 HTTP 代理覆盖 |
 
-### `[plugins.PLUGIN.capabilities]`
+### `[lambdas.LAMBDA.capabilities]`
 
 覆盖插件能力（与 manifest 合并）。
 

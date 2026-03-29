@@ -7,7 +7,7 @@
 
 use mochiclaw_sdk::host::kv::{kv_get, kv_remove, kv_set};
 
-/// KV key for route tag (plugin-level, not user-specific)
+/// KV key for route tag (lambda-level, not user-specific)
 const KEY_ROUTE_TAG: &str = "route_tag";
 
 /// KV key prefix for context_token

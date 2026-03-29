@@ -39,8 +39,8 @@ pub struct Config {
     pub runtime: RuntimeConfig,
     /// Per-lambda configuration (key = lambda name)
     #[serde(default)]
-    pub plugins: HashMap<String, LambdaConfig>,
-    /// Channel-specific plugin configuration
+    pub lambdas: HashMap<String, LambdaConfig>,
+    /// Channel-specific lambda configuration
     #[serde(default)]
     pub channels: HashMap<String, ChannelConfig>,
     /// Model configurations
@@ -119,7 +119,7 @@ impl Config {
                 workspace: ".".to_string(),
             },
             runtime: RuntimeConfig {
-                plugin_dirs: vec!["./lambdas".to_string()],
+                lambda_dirs: vec!["./lambdas".to_string()],
                 log: LogConfig {
                     level: "info".to_string(),
                     dir: None,
@@ -129,7 +129,7 @@ impl Config {
                     use_system_proxy: false,
                 },
             },
-            plugins: HashMap::new(),
+            lambdas: HashMap::new(),
             channels: HashMap::new(),
             models: HashMap::from([(
                 "gpt-4".to_string(),

@@ -38,10 +38,10 @@ enum Commands {
         #[arg(default_value = None)]
         config: Option<PathBuf>,
     },
-    /// Login to a channel plugin (e.g., weixin)
+    /// Login to a channel lambda (e.g., weixin)
     Login {
-        /// Plugin name (e.g., mochiclaw-weixin)
-        plugin: String,
+        /// Lambda name (e.g., mochiclaw-weixin)
+        lambda: String,
         /// Config file path (default: $MOCHICLAW_CONFIG or config.toml)
         #[arg(default_value = None)]
         config: Option<PathBuf>,
@@ -71,7 +71,7 @@ async fn main() -> Result<()> {
             commands::start(config, config_path).await
         }
         Commands::Onboard { config } => commands::onboard(resolve_config_path(config)).await,
-        Commands::Login { plugin, config } => {
+        Commands::Login { lambda, config } => {
             let config_path = resolve_config_path(config);
             let config = if config_path.exists() {
                 mochiclaw_config::Config::from_file(&config_path)?
@@ -84,7 +84,7 @@ async fn main() -> Result<()> {
                 Some(&config.runtime.log.level),
                 config_dir,
             );
-            commands::login(&plugin, config, config_path).await
+            commands::login(&lambda, config, config_path).await
         }
         Commands::Version => {
             println!("mochiclaw {}", env!("CARGO_PKG_VERSION"));

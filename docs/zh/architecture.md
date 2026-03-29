@@ -17,12 +17,12 @@ Mochiclaw 是一个基于插件的 AI Agent 运行时。架构分为四个主要
 │  │AgentLoop │ │MessageBus│ │Session  │  │
 │  └──────────┘ └──────────┘ └─────────┘  │
 ├─────────────────────────────────────────┤
-│            mochiclaw-plugin             │  插件主机 (Extism)
+│            mochiclaw-lambda             │  插件主机 (Extism)
 │  ┌──────────────────────────────────┐   │
-│  │  PluginHost  │  Pool  │ Host Fn  │   │
+│  │  LambdaHost  │  Pool  │ Host Fn  │   │
 │  └──────────────────────────────────┘   │
 ├─────────────────────────────────────────┤
-│              plugins/                   │  WASM 插件
+│              lambdas/                   │  WASM 插件
 │  ┌─────────┐ ┌─────────┐ ┌─────────┐    │
 │  │ OpenAI  │ │   FS    │ │ WeChat  │    │
 │  │Provider │ │  Tool   │ │ Channel │    │
@@ -59,7 +59,7 @@ Mochiclaw 是一个基于插件的 AI Agent 运行时。架构分为四个主要
 
 管理存储在磁盘上的对话历史。每个会话在 `sessions/` 下有独立文件。
 
-### PluginHost (`mochiclaw-plugin`)
+### LambdaHost (`mochiclaw-lambda`)
 
 管理 WASM 插件生命周期：
 
@@ -83,24 +83,24 @@ Mochiclaw 是一个基于插件的 AI Agent 运行时。架构分为四个主要
 ### 消息处理
 
 ```
-1. Channel Plugin (poll) → InboundMessage
+1. Channel Lambda (poll) → InboundMessage
 2. AgentLoop → SessionManager (追加到历史)
 3. AgentLoop → ContextBuilder (构建系统提示)
-4. AgentLoop → Provider Plugin (chat request)
+4. AgentLoop → Provider Lambda (chat request)
 5. 如果有 tool_calls:
-   a. AgentLoop → Tool Plugin (execute_tool)
+   a. AgentLoop → Tool Lambda (execute_tool)
    b. 重复 4-5 直到没有 tool_calls
-6. AgentLoop → Channel Plugin (send_text response)
+6. AgentLoop → Channel Lambda (send_text response)
 ```
 
 ### 能力 enforcement
 
 ```
-Plugin Manifest → Extism Manifest
+Lambda Manifest → Extism Manifest
                      ↓
               Allowed Hosts
                      ↓
-              PluginHost host_http_request()
+              LambdaHost host_http_request()
                      ↓
               检查 whitelist/blacklist
                      ↓
@@ -114,6 +114,6 @@ Plugin Manifest → Extism Manifest
 | `core/src/agent.rs` | AgentLoop 实现 |
 | `core/src/bus.rs` | MessageBus |
 | `core/src/session.rs` | SessionManager |
-| `plugin/src/plugin.rs` | PluginHost |
-| `plugin/src/host/mod.rs` | Host functions |
+| `lambda/src/lambda.rs` | LambdaHost |
+| `lambda/src/host/mod.rs` | Host functions |
 | `sdk/src/lib.rs` | 共享类型 |

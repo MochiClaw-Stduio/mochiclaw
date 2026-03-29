@@ -1,6 +1,6 @@
 # 插件系统
 
-[English](../en/plugin-system.md) | 简体中文
+[English](../en/lambda-system.md) | 简体中文
 
 ---
 
@@ -58,7 +58,7 @@ write_blacklist = []               # 写入黑名单
 
 ```toml
 [capabilities]
-allowed_kv_read = ["plugin-a", "plugin-b"]  # 可读取其他插件的 KV
+allowed_kv_read = ["lambda-a", "lambda-b"]  # 可读取其他插件的 KV
 ```
 
 - 每个插件有自己的 KV 命名空间
@@ -91,7 +91,7 @@ tool = true
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│                     PluginHost                            │
+│                     LambdaHost                            │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
 │  │  Pool       │  │  Pool       │  │  Pool       │        │
 │  │  (openai)   │  │  (fs)       │  │  (weixin)   │        │
@@ -111,12 +111,12 @@ tool = true
 └───────────────────────────────────────────────────────────┘
 ```
 
-### PluginHost
+### LambdaHost
 
-`PluginHost` 是插件的运行时管理器：
+`LambdaHost` 是插件的运行时管理器：
 
 - **CompiledPlugin 池**：每个插件有一个 JIT 编译的 `CompiledPlugin`
-- **Pool**：每个插件有一个 `Pool`，管理多个 `Plugin` 实例实现并发
+- **Pool**：每个插件有一个 `Pool`，管理多个 `Lambda` 实例实现并发
 - **Host Functions**：向插件暴露的能力（HTTP、FS、KV、Rand）
 
 ### 并发模型
@@ -127,15 +127,15 @@ tool = true
 let pool = PoolBuilder::new()
     .with_max_instances(std::thread::available_parallelism().unwrap().into())
     .build(move || {
-        Plugin::new_from_compiled(&compiled)
+        Lambda::new_from_compiled(&compiled)
     });
 ```
 
 插件调用时从池中获取实例：
 
 ```rust
-let mut plugin = pool.get(timeout)?;
-plugin.call("function_name", &input)?
+let mut lambda = pool.get(timeout)?;
+lambda.call("function_name", &input)?
 ```
 
 ## 宿主函数（Host Functions）
@@ -175,8 +175,8 @@ fn fs_list(path: &str) -> Result<Vec<String>, KvError>
 fn kv_set(key: &str, value: &[u8]) -> Result<(), KvError>
 fn kv_get(key: &str) -> Result<Vec<u8>, KvError>
 fn kv_remove(key: &str) -> Result<(), KvError>
-fn kv_set_raw(plugin: &str, key: &str, value: &[u8]) -> Result<(), KvError>
-fn kv_get_raw(plugin: &str, key: &str) -> Result<Vec<u8>, KvError>
+fn kv_set_raw(lambda: &str, key: &str, value: &[u8]) -> Result<(), KvError>
+fn kv_get_raw(lambda: &str, key: &str) -> Result<Vec<u8>, KvError>
 ```
 
 ### 随机数
@@ -194,16 +194,16 @@ fn rand_bytes(n: u32) -> Vec<u8>
 ### 1. 创建插件项目
 
 ```bash
-# 在 plugins/ 目录下创建
-cargo new --target wasm32-unknown-unknown my-plugin
+# 在 lambdas/ 目录下创建
+cargo new --target wasm32-unknown-unknown my-lambda
 ```
 
 ### 2. 编写 manifest.toml
 
 ```toml
-name = "mochi-my-plugin"
+name = "mochi-my-lambda"
 version = "0.1.0"
-description = "My custom plugin"
+description = "My custom lambda"
 
 [capabilities.network]
 enabled = true
@@ -242,24 +242,24 @@ pub fn execute_tool(input: ToolExecutionRequest) -> FnResult<ToolExecutionRespon
 ### 4. 构建
 
 ```bash
-cargo build --release --target wasm32-unknown-unknown -p mochi-my-plugin
+cargo build --release --target wasm32-unknown-unknown -p mochi-my-lambda
 ```
 
 ### 5. 部署
 
-将 `target/wasm32-unknown-unknown/release/mochi_my_plugin.wasm` 和 `manifest.toml` 复制到插件目录。
+将 `target/wasm32-unknown-unknown/release/mochi_my_lambda.wasm` 和 `manifest.toml` 复制到插件目录。
 
 ## 配置覆盖
 
 用户可以在 `config.toml` 中覆盖插件声明的能力：
 
 ```toml
-[plugins.mochi-openai]
-[plugins.mochi-openai.capabilities.network]
+[lambdas.mochi-openai]
+[lambdas.mochi-openai.capabilities.network]
 allowed_hosts = ["*.openai.com", "*.deepseek.com"]
 
-[plugins.mochi-fs]
-[plugins.mochi-fs.capabilities.fs]
+[lambdas.mochi-fs]
+[lambdas.mochi-fs.capabilities.fs]
 allowed_root = "/custom/path"
 ```
 

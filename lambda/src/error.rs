@@ -1,11 +1,11 @@
-//! Plugin error types
+//! Lambda error types
 
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("plugin error: {0}")]
-    Plugin(String),
+    #[error("lambda error: {0}")]
+    Lambda(String),
 
     #[error("manifest error: {0}")]
     Manifest(String),

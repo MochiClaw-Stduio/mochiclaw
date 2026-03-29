@@ -1,18 +1,18 @@
-# Plugin System
+# Lambda System
 
-[简体中文](../zh/plugin-system.md) | English
+[简体中文](../zh/lambda-system.md) | English
 
 ---
 
 ## Overview
 
-Mochiclaw's plugin system is built on **Extism**, allowing plugins to run as **WASM (WASM32-unknown-unknown)** in an isolated sandbox environment. Each plugin is completely isolated and can only interact with the outside world through explicitly declared capabilities.
+Mochiclaw's lambda system is built on **Extism**, allowing lambdas to run as **WASM (WASM32-unknown-unknown)** in an isolated sandbox environment. Each lambda is completely isolated and can only interact with the outside world through explicitly declared capabilities.
 
 ## Core Concepts
 
-### 1. Plugin Types (Features)
+### 1. Lambda Types (Features)
 
-Plugins can declare the following feature types:
+Lambdas can declare the following feature types:
 
 | Type | Description | Example |
 |------|-------------|---------|
@@ -23,7 +23,7 @@ Plugins can declare the following feature types:
 
 ### 2. Capability System (Capabilities)
 
-Plugins must declare their required capabilities, and the system enforces access control based on these declarations:
+Lambdas must declare their required capabilities, and the system enforces access control based on these declarations:
 
 #### Network Capabilities
 
@@ -58,16 +58,16 @@ write_blacklist = []               # Write blacklist
 
 ```toml
 [capabilities]
-allowed_kv_read = ["plugin-a", "plugin-b"]  # Can read other plugins' KV
+allowed_kv_read = ["lambda-a", "lambda-b"]  # Can read other lambdas' KV
 ```
 
-- Each plugin has its own KV namespace
+- Each lambda has its own KV namespace
 - By default, can only read/write its own KV
-- Can read other plugins' KV through `allowed_kv_read`
+- Can read other lambdas' KV through `allowed_kv_read`
 
-### 3. Plugin Manifest
+### 3. Lambda Manifest
 
-Each plugin requires a `manifest.toml` file:
+Each lambda requires a `manifest.toml` file:
 
 ```toml
 name = "mochi-fs"
@@ -91,7 +91,7 @@ tool = true
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│                     PluginHost                            │
+│                     LambdaHost                            │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
 │  │  Pool       │  │  Pool       │  │  Pool       │        │
 │  │  (openai)   │  │  (fs)       │  │  (weixin)   │        │
@@ -111,31 +111,31 @@ tool = true
 └───────────────────────────────────────────────────────────┘
 ```
 
-### PluginHost
+### LambdaHost
 
-`PluginHost` is the plugin runtime manager:
+`LambdaHost` is the lambda runtime manager:
 
-- **CompiledPlugin Pool**: Each plugin has one JIT-compiled `CompiledPlugin`
-- **Pool**: Each plugin has one `Pool` managing multiple `Plugin` instances for concurrency
-- **Host Functions**: Capabilities exposed to plugins (HTTP, FS, KV, Rand)
+- **CompiledPlugin Pool**: Each lambda has one JIT-compiled `CompiledPlugin`
+- **Pool**: Each lambda has one `Pool` managing multiple `Lambda` instances for concurrency
+- **Host Functions**: Capabilities exposed to lambdas (HTTP, FS, KV, Rand)
 
 ### Concurrency Model
 
-Plugins achieve concurrency through **Pool**:
+Lambdas achieve concurrency through **Pool**:
 
 ```rust
 let pool = PoolBuilder::new()
     .with_max_instances(std::thread::available_parallelism().unwrap().into())
     .build(move || {
-        Plugin::new_from_compiled(&compiled)
+        Lambda::new_from_compiled(&compiled)
     });
 ```
 
-When calling a plugin, acquire an instance from the pool:
+When calling a lambda, acquire an instance from the pool:
 
 ```rust
-let mut plugin = pool.get(timeout)?;
-plugin.call("function_name", &input)?
+let mut lambda = pool.get(timeout)?;
+lambda.call("function_name", &input)?
 ```
 
 ## Host Functions
@@ -175,8 +175,8 @@ fn fs_list(path: &str) -> Result<Vec<String>, KvError>
 fn kv_set(key: &str, value: &[u8]) -> Result<(), KvError>
 fn kv_get(key: &str) -> Result<Vec<u8>, KvError>
 fn kv_remove(key: &str) -> Result<(), KvError>
-fn kv_set_raw(plugin: &str, key: &str, value: &[u8]) -> Result<(), KvError>
-fn kv_get_raw(plugin: &str, key: &str) -> Result<Vec<u8>, KvError>
+fn kv_set_raw(lambda: &str, key: &str, value: &[u8]) -> Result<(), KvError>
+fn kv_get_raw(lambda: &str, key: &str) -> Result<Vec<u8>, KvError>
 ```
 
 ### Random
@@ -189,21 +189,21 @@ fn rand_u32_bounded(max: u32) -> u32
 fn rand_bytes(n: u32) -> Vec<u8>
 ```
 
-## Plugin Development
+## Lambda Development
 
-### 1. Create Plugin Project
+### 1. Create Lambda Project
 
 ```bash
-# Create in plugins/ directory
-cargo new --target wasm32-unknown-unknown my-plugin
+# Create in lambdas/ directory
+cargo new --target wasm32-unknown-unknown my-lambda
 ```
 
 ### 2. Write manifest.toml
 
 ```toml
-name = "mochi-my-plugin"
+name = "mochi-my-lambda"
 version = "0.1.0"
-description = "My custom plugin"
+description = "My custom lambda"
 
 [capabilities.network]
 enabled = true
@@ -217,7 +217,7 @@ allowed_root = "${workspace}"
 tool = true
 ```
 
-### 3. Implement Plugin Logic
+### 3. Implement Lambda Logic
 
 ```rust
 use mochiclaw_sdk::*;
@@ -242,24 +242,24 @@ pub fn execute_tool(input: ToolExecutionRequest) -> FnResult<ToolExecutionRespon
 ### 4. Build
 
 ```bash
-cargo build --release --target wasm32-unknown-unknown -p mochi-my-plugin
+cargo build --release --target wasm32-unknown-unknown -p mochi-my-lambda
 ```
 
 ### 5. Deploy
 
-Copy `target/wasm32-unknown-unknown/release/mochi_my_plugin.wasm` and `manifest.toml` to the plugin directory.
+Copy `target/wasm32-unknown-unknown/release/mochi_my_lambda.wasm` and `manifest.toml` to the lambda directory.
 
 ## Configuration Override
 
-Users can override plugin-declared capabilities in `config.toml`:
+Users can override lambda-declared capabilities in `config.toml`:
 
 ```toml
-[plugins.mochi-openai]
-[plugins.mochi-openai.capabilities.network]
+[lambdas.mochi-openai]
+[lambdas.mochi-openai.capabilities.network]
 allowed_hosts = ["*.openai.com", "*.deepseek.com"]
 
-[plugins.mochi-fs]
-[plugins.mochi-fs.capabilities.fs]
+[lambdas.mochi-fs]
+[lambdas.mochi-fs.capabilities.fs]
 allowed_root = "/custom/path"
 ```
 
@@ -270,7 +270,7 @@ Override rules:
 
 ## Security Model
 
-1. **Sandbox Isolation**: WASM plugins run in an independent virtual machine
-2. **Capability Declaration**: Plugins must declare required capabilities
+1. **Sandbox Isolation**: WASM lambdas run in an independent virtual machine
+2. **Capability Declaration**: Lambdas must declare required capabilities
 3. **Access Control**: Network hosts and filesystem paths both support blacklists
 4. **KV Isolation**: By default, can only access own KV storage

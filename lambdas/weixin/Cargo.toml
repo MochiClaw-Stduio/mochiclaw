@@ -2,7 +2,7 @@
 name = "mochi-weixin"
 version.workspace = true
 edition.workspace = true
-description = "Weixin channel plugin for Mochiclaw"
+description = "Weixin channel lambda for Mochiclaw"
 
 [lib]
 crate-type = ["cdylib"]

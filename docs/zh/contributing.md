@@ -35,7 +35,7 @@ just build
 just build-native
 
 # 仅构建插件
-just build-plugin
+just build-lambda
 
 # 构建特定插件
 cargo build --release --target wasm32-unknown-unknown -p mochi-openai
@@ -60,27 +60,27 @@ just test
 |-------|------|
 | `mochiclaw-cli` | CLI 入口 |
 | `mochiclaw-core` | Agent 运行时（AgentLoop、MessageBus、SessionManager） |
-| `mochiclaw-plugin` | WASM 插件主机（PluginHost、Pool） |
+| `mochiclaw-lambda` | WASM 插件主机（LambdaHost、Pool） |
 | `mochiclaw-sdk` | 共享类型 |
 | `mochiclaw-config` | 配置结构 |
 
-`plugins/` 下的官方插件：
+`lambdas/` 下的官方插件：
 - `mochi-openai` - OpenAI 兼容 LLM provider
 - `mochi-fs` - 文件系统工具
 - `mochi-weixin` - 微信 channel
 
 ## 编写插件
 
-详细插件开发指南请参见 [plugin-tutorial.md](./plugin-tutorial.md)。
+详细插件开发指南请参见 [lambda-tutorial.md](./lambda-tutorial.md)。
 
 ## 提交规范
 
 ```
-feat: add new plugin type
+feat: add new lambda type
 fix: resolve agent loop deadlock
 docs: add configuration guide
 refactor: simplify message bus
-test: add integration tests for fs plugin
+test: add integration tests for fs lambda
 ```
 
 ## 报告问题

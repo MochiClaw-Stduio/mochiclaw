@@ -2,7 +2,7 @@
 name = "mochiclaw-sdk"
 version.workspace = true
 edition.workspace = true
-description = "Mochiclaw SDK - Shared types for host and plugins"
+description = "Mochiclaw SDK - Shared types for host and lambdas"
 
 [dependencies]
 async-trait.workspace = true

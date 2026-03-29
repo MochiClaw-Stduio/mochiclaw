@@ -24,4 +24,4 @@ pub use session::{Message, Session, SessionManager};
 pub use mochiclaw_config::Config;
 
 // Re-export lambda types from mochiclaw-lambda
-pub use mochiclaw_lambda::{PluginHost, PluginManifest, discover};
+pub use mochiclaw_lambda::{LambdaHost, LambdaManifest, discover};

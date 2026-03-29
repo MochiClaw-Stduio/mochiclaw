@@ -1,25 +1,25 @@
-//! Plugin runtime context - stores per-plugin manifest and config
+//! Lambda runtime context - stores per-lambda manifest and config
 //!
-//! This module provides PluginContext which holds the merged manifest
-//! and config for each loaded plugin.
+//! This module provides LambdaContext which holds the merged manifest
+//! and config for each loaded lambda.
 
-use crate::manifest::PluginManifest;
+use crate::manifest::LambdaManifest;
 use mochiclaw_config::LambdaConfig;
 
-/// Complete runtime context for a plugin
+/// Complete runtime context for a lambda
 #[derive(Debug, Clone)]
-pub struct PluginContext {
-    /// Plugin manifest (with capabilities merged from config overrides)
-    pub manifest: PluginManifest,
-    /// Plugin configuration
+pub struct LambdaContext {
+    /// Lambda manifest (with capabilities merged from config overrides)
+    pub manifest: LambdaManifest,
+    /// Lambda configuration
     pub config: LambdaConfig,
     /// Whether to use system proxy when proxy_url is not set
     pub use_system_proxy: bool,
 }
 
-impl PluginContext {
-    /// Create a new PluginContext
-    pub fn new(manifest: PluginManifest, config: LambdaConfig, use_system_proxy: bool) -> Self {
+impl LambdaContext {
+    /// Create a new LambdaContext
+    pub fn new(manifest: LambdaManifest, config: LambdaConfig, use_system_proxy: bool) -> Self {
         Self {
             manifest,
             config,
@@ -96,5 +96,5 @@ impl PluginContext {
     }
 }
 
-/// Collection of all plugin contexts
-pub type PluginContextMap = std::collections::HashMap<String, PluginContext>;
+/// Collection of all lambda contexts
+pub type LambdaContextMap = std::collections::HashMap<String, LambdaContext>;

@@ -1,6 +1,6 @@
-//! Host KV functions - safe wrappers for plugin use
+//! Host KV functions - safe wrappers for lambda use
 //!
-//! Provides typed access to the shared KV store from plugins.
+//! Provides typed access to the shared KV store from lambdas.
 
 use extism_pdk::*;
 use rmp_serde::{Deserializer, Serializer};
@@ -10,8 +10,8 @@ use std::io::Cursor;
 /// KV input structures (MessagePack encoded)
 #[derive(Serialize, Deserialize)]
 struct KVGetInput {
-    /// Target plugin to read from (optional, defaults to own plugin if None/empty)
-    plugin: Option<String>,
+    /// Target lambda to read from (optional, defaults to own lambda if None/empty)
+    lambda: Option<String>,
     key: String,
 }
 
@@ -47,12 +47,12 @@ extern "ExtismHost" {
     /// Output: i64 (0 = success, -1 = not found)
     fn host_kv_remove(input: Vec<u8>) -> i64;
 
-    /// List plugins this plugin can read from
+    /// List lambdas this lambda can read from
     ///
     /// Output: MessagePack encoded Vec<String>
     fn host_kv_list_readable() -> Vec<u8>;
 
-    /// List plugins this plugin can write to
+    /// List lambdas this lambda can write to
     ///
     /// Output: MessagePack encoded Vec<String>
     fn host_kv_list_writable() -> Vec<u8>;
@@ -72,7 +72,7 @@ fn from_msgpack<'a, T: Deserialize<'a>>(buf: &'a [u8]) -> Option<T> {
 
 /// Get a value from KV store and deserialize it
 ///
-/// This reads from the calling plugin's own KV store.
+/// This reads from the calling lambda's own KV store.
 ///
 /// # Arguments
 /// * `key` - key to get
@@ -82,7 +82,7 @@ fn from_msgpack<'a, T: Deserialize<'a>>(buf: &'a [u8]) -> Option<T> {
 /// * `None` if key not found or deserialization failed
 pub fn kv_get<T: for<'de> Deserialize<'de>>(key: &str) -> Option<T> {
     let input = KVGetInput {
-        plugin: None,
+        lambda: None,
         key: key.to_string(),
     };
 
@@ -106,20 +106,20 @@ pub fn kv_get<T: for<'de> Deserialize<'de>>(key: &str) -> Option<T> {
     }
 }
 
-/// Get a value from another plugin's KV store and deserialize it
+/// Get a value from another lambda's KV store and deserialize it
 ///
-/// Requires the calling plugin to have permission (declared in allowed_kv_read).
+/// Requires the calling lambda to have permission (declared in allowed_kv_read).
 ///
 /// # Arguments
-/// * `plugin` - plugin name to read from
+/// * `lambda` - lambda name to read from
 /// * `key` - key to get
 ///
 /// # Returns
 /// * `Some(T)` on success
 /// * `None` if key not found, not allowed, or deserialization failed
-pub fn kv_get_from<T: for<'de> Deserialize<'de>>(plugin: &str, key: &str) -> Option<T> {
+pub fn kv_get_from<T: for<'de> Deserialize<'de>>(lambda: &str, key: &str) -> Option<T> {
     let input = KVGetInput {
-        plugin: Some(plugin.to_string()),
+        lambda: Some(lambda.to_string()),
         key: key.to_string(),
     };
 
@@ -145,7 +145,7 @@ pub fn kv_get_from<T: for<'de> Deserialize<'de>>(plugin: &str, key: &str) -> Opt
 
 /// Set a value in KV store (serializes to MessagePack first)
 ///
-/// This writes to the calling plugin's own KV store.
+/// This writes to the calling lambda's own KV store.
 ///
 /// # Arguments
 /// * `key` - key to set
@@ -196,7 +196,7 @@ pub fn kv_set_raw(key: &str, value: Vec<u8>) -> bool {
 }
 /// Get a raw bytes value from KV store (no deserialization)
 ///
-/// This reads from the calling plugin's own KV store.
+/// This reads from the calling lambda's own KV store.
 ///
 /// # Arguments
 /// * `key` - key to get
@@ -206,7 +206,7 @@ pub fn kv_set_raw(key: &str, value: Vec<u8>) -> bool {
 /// * `None` if key not found
 pub fn kv_get_raw(key: &str) -> Option<Vec<u8>> {
     let input = KVGetInput {
-        plugin: None,
+        lambda: None,
         key: key.to_string(),
     };
 
@@ -227,7 +227,7 @@ pub fn kv_get_raw(key: &str) -> Option<Vec<u8>> {
 
 /// Remove a value from KV store
 ///
-/// This removes from the calling plugin's own KV store.
+/// This removes from the calling lambda's own KV store.
 ///
 /// # Arguments
 /// * `key` - key to remove
@@ -248,7 +248,7 @@ pub fn kv_remove(key: &str) -> bool {
     matches!(unsafe { host_kv_remove(input_bytes) }, Ok(0))
 }
 
-/// List plugins this plugin can read from (including self).
+/// List lambdas this lambda can read from (including self).
 ///
 /// # Returns
 /// * `Some(Vec<String>)` on success
@@ -266,7 +266,7 @@ pub fn kv_list_readable() -> Option<Vec<String>> {
     from_msgpack(&output_bytes)
 }
 
-/// List plugins this plugin can write to (currently just self).
+/// List lambdas this lambda can write to (currently just self).
 ///
 /// # Returns
 /// * `Some(Vec<String>)` on success
@@ -334,24 +334,24 @@ mod tests {
 
     #[test]
     fn test_kv_get_input_serialization() {
-        // Test with plugin = None (read from self)
+        // Test with lambda = None (read from self)
         let input = KVGetInput {
-            plugin: None,
+            lambda: None,
             key: "test_key".to_string(),
         };
         let serialized = to_msgpack(&input).unwrap();
         let deserialized: KVGetInput = from_msgpack(&serialized).unwrap();
-        assert_eq!(input.plugin, deserialized.plugin);
+        assert_eq!(input.lambda, deserialized.lambda);
         assert_eq!(input.key, deserialized.key);
 
-        // Test with plugin = Some (read from other)
+        // Test with lambda = Some (read from other)
         let input = KVGetInput {
-            plugin: Some("other_plugin".to_string()),
+            lambda: Some("other_lambda".to_string()),
             key: "test_key".to_string(),
         };
         let serialized = to_msgpack(&input).unwrap();
         let deserialized: KVGetInput = from_msgpack(&serialized).unwrap();
-        assert_eq!(input.plugin, deserialized.plugin);
+        assert_eq!(input.lambda, deserialized.lambda);
         assert_eq!(input.key, deserialized.key);
     }
 
@@ -405,7 +405,7 @@ mod tests {
     #[test]
     fn test_empty_key_handling() {
         let input = KVGetInput {
-            plugin: None,
+            lambda: None,
             key: "".to_string(),
         };
         let serialized = to_msgpack(&input).unwrap();
@@ -414,14 +414,14 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_plugin_means_self() {
+    fn test_empty_lambda_means_self() {
         let input = KVGetInput {
-            plugin: Some("".to_string()),
+            lambda: Some("".to_string()),
             key: "test".to_string(),
         };
         let serialized = to_msgpack(&input).unwrap();
         let deserialized: KVGetInput = from_msgpack(&serialized).unwrap();
-        // Empty string plugin should be preserved (host decides what it means)
-        assert_eq!(input.plugin, deserialized.plugin);
+        // Empty string lambda should be preserved (host decides what it means)
+        assert_eq!(input.lambda, deserialized.lambda);
     }
 }

@@ -1,4 +1,4 @@
-//! Host KV functions for plugins
+//! Host KV functions for lambdas
 //!
 //! Uses MessagePack encoding for input/output structures.
 
@@ -10,15 +10,15 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 type KvStore = HashMap<String, Vec<u8>>;
-type PluginKvStore = HashMap<String, KvStore>;
+type LambdaKvStore = HashMap<String, KvStore>;
 
-/// Shared KV store for all plugin instances
-/// Key structure: plugin_name -> key -> msgpack encoded value
-pub struct PluginKV {
-    store: Arc<std::sync::Mutex<PluginKvStore>>,
+/// Shared KV store for all lambda instances
+/// Key structure: lambda_name -> key -> msgpack encoded value
+pub struct LambdaKV {
+    store: Arc<std::sync::Mutex<LambdaKvStore>>,
 }
 
-impl Clone for PluginKV {
+impl Clone for LambdaKV {
     fn clone(&self) -> Self {
         Self {
             store: Arc::clone(&self.store),
@@ -26,8 +26,8 @@ impl Clone for PluginKV {
     }
 }
 
-impl PluginKV {
-    /// Create a new PluginKV store
+impl LambdaKV {
+    /// Create a new LambdaKV store
     pub fn new() -> Self {
         Self {
             store: Arc::new(std::sync::Mutex::new(HashMap::new())),
@@ -35,7 +35,7 @@ impl PluginKV {
     }
 
     /// Set a value (auto-serializes to msgpack)
-    pub fn set<T: Serialize>(&self, plugin: &str, key: &str, value: &T) {
+    pub fn set<T: Serialize>(&self, lambda: &str, key: &str, value: &T) {
         let mut buf = Vec::new();
         if value.serialize(&mut Serializer::new(&mut buf)).is_err() {
             tracing::error!("kv serialize error");
@@ -44,44 +44,44 @@ impl PluginKV {
 
         let mut store = self.store.lock().unwrap();
         store
-            .entry(plugin.to_string())
+            .entry(lambda.to_string())
             .or_default()
             .insert(key.to_string(), buf);
     }
 
     /// Get a value (auto-deserializes from msgpack)
-    pub fn get<T: for<'de> Deserialize<'de>>(&self, plugin: &str, key: &str) -> Option<T> {
+    pub fn get<T: for<'de> Deserialize<'de>>(&self, lambda: &str, key: &str) -> Option<T> {
         let store = self.store.lock().unwrap();
-        let bytes = store.get(plugin)?.get(key)?;
+        let bytes = store.get(lambda)?.get(key)?;
 
         T::deserialize(&mut Deserializer::new(Cursor::new(bytes))).ok()
     }
 
     /// Set raw bytes (no serialization)
-    pub fn set_raw(&self, plugin: &str, key: &str, value: Vec<u8>) {
+    pub fn set_raw(&self, lambda: &str, key: &str, value: Vec<u8>) {
         let mut store = self.store.lock().unwrap();
         store
-            .entry(plugin.to_string())
+            .entry(lambda.to_string())
             .or_default()
             .insert(key.to_string(), value);
     }
 
     /// Get raw bytes (no deserialization)
-    pub fn get_raw(&self, plugin: &str, key: &str) -> Option<Vec<u8>> {
+    pub fn get_raw(&self, lambda: &str, key: &str) -> Option<Vec<u8>> {
         let store = self.store.lock().unwrap();
-        store.get(plugin)?.get(key).cloned()
+        store.get(lambda)?.get(key).cloned()
     }
 
     /// Remove a value
-    pub fn remove(&self, plugin: &str, key: &str) {
+    pub fn remove(&self, lambda: &str, key: &str) {
         let mut store = self.store.lock().unwrap();
-        if let Some(m) = store.get_mut(plugin) {
+        if let Some(m) = store.get_mut(lambda) {
             m.remove(key);
         }
     }
 }
 
-impl Default for PluginKV {
+impl Default for LambdaKV {
     fn default() -> Self {
         Self::new()
     }
@@ -90,8 +90,8 @@ impl Default for PluginKV {
 /// KV input structures for host functions (MessagePack encoded)
 #[derive(Serialize, Deserialize)]
 pub struct KVGetInput {
-    /// Target plugin to read from (optional, defaults to own plugin if empty)
-    pub plugin: Option<String>,
+    /// Target lambda to read from (optional, defaults to own lambda if empty)
+    pub lambda: Option<String>,
     /// Key to read
     pub key: String,
 }
@@ -107,52 +107,52 @@ pub struct KVRemoveInput {
     pub key: String,
 }
 
-/// KV access context bound to a plugin
-/// plugin_name: the plugin's own name (for write operations and self-read)
-/// allowed_kv_read: list of other plugin names this plugin can read from
-pub struct PluginKVContext {
-    kv: Arc<PluginKV>,
-    plugin_name: String,
+/// KV access context bound to a lambda
+/// lambda_name: the lambda's own name (for write operations and self-read)
+/// allowed_kv_read: list of other lambda names this lambda can read from
+pub struct LambdaKVContext {
+    kv: Arc<LambdaKV>,
+    lambda_name: String,
     allowed_kv_read: Vec<String>,
 }
 
-impl PluginKVContext {
-    pub fn new(kv: Arc<PluginKV>, plugin_name: &str, allowed_kv_read: Vec<String>) -> Self {
+impl LambdaKVContext {
+    pub fn new(kv: Arc<LambdaKV>, lambda_name: &str, allowed_kv_read: Vec<String>) -> Self {
         Self {
             kv,
-            plugin_name: plugin_name.to_string(),
+            lambda_name: lambda_name.to_string(),
             allowed_kv_read,
         }
     }
 
-    /// Check if reading from target_plugin is allowed
-    fn can_read(&self, target_plugin: &str) -> bool {
-        target_plugin == self.plugin_name
-            || self.allowed_kv_read.contains(&target_plugin.to_string())
+    /// Check if reading from target_lambda is allowed
+    fn can_read(&self, target_lambda: &str) -> bool {
+        target_lambda == self.lambda_name
+            || self.allowed_kv_read.contains(&target_lambda.to_string())
     }
 }
 
-impl Clone for PluginKVContext {
+impl Clone for LambdaKVContext {
     fn clone(&self) -> Self {
         Self {
             kv: self.kv.clone(),
-            plugin_name: self.plugin_name.clone(),
+            lambda_name: self.lambda_name.clone(),
             allowed_kv_read: self.allowed_kv_read.clone(),
         }
     }
 }
 
 // Manual Send + Sync impls needed for UserData
-unsafe impl Send for PluginKVContext {}
-unsafe impl Sync for PluginKVContext {}
+unsafe impl Send for LambdaKVContext {}
+unsafe impl Sync for LambdaKVContext {}
 
-/// Create all KV host functions bound to a specific plugin
+/// Create all KV host functions bound to a specific lambda
 pub fn kv_functions(
-    kv: Arc<PluginKV>,
-    plugin_name: &str,
+    kv: Arc<LambdaKV>,
+    lambda_name: &str,
     allowed_kv_read: Vec<String>,
 ) -> Vec<Function> {
-    let ctx = PluginKVContext::new(kv, plugin_name, allowed_kv_read);
+    let ctx = LambdaKVContext::new(kv, lambda_name, allowed_kv_read);
     vec![
         kv_get_fn(ctx.clone()),
         kv_set_fn(ctx.clone()),
@@ -164,19 +164,19 @@ pub fn kv_functions(
 
 /// host_kv_get: get a value from KV store
 ///
-/// Input: MessagePack encoded KVGetInput (plugin + key)
+/// Input: MessagePack encoded KVGetInput (lambda + key)
 /// Output: MessagePack encoded Option<Vec<u8>> (None if not found or not allowed)
-/// Permission: own plugin always allowed, others require declared permission
-pub fn kv_get_fn(ctx: PluginKVContext) -> Function {
+/// Permission: own lambda always allowed, others require declared permission
+pub fn kv_get_fn(ctx: LambdaKVContext) -> Function {
     Function::new(
         "host_kv_get",
         [ValType::I64],
         [ValType::I64],
         UserData::new(ctx),
-        |plugin: &mut CurrentPlugin,
+        |lambda: &mut CurrentPlugin,
          inputs: &[Val],
          outputs: &mut [Val],
-         user_data: UserData<PluginKVContext>| {
+         user_data: UserData<LambdaKVContext>| {
             // Get context with permission info
             let ctx_arc = match user_data.get() {
                 Ok(ctx) => ctx,
@@ -195,14 +195,14 @@ pub fn kv_get_fn(ctx: PluginKVContext) -> Function {
                 }
             };
 
-            // Read input from plugin memory
+            // Read input from lambda memory
             let input_offset = inputs.first().and_then(|v| v.i64()).unwrap_or(0) as u64;
             if input_offset == 0 {
                 outputs[0] = Val::I64(0);
                 return Ok(());
             }
 
-            let handle = match plugin.memory_handle(input_offset) {
+            let handle = match lambda.memory_handle(input_offset) {
                 Some(h) => h,
                 None => {
                     outputs[0] = Val::I64(0);
@@ -210,7 +210,7 @@ pub fn kv_get_fn(ctx: PluginKVContext) -> Function {
                 }
             };
 
-            let bytes = match plugin.memory_bytes(handle) {
+            let bytes = match lambda.memory_bytes(handle) {
                 Ok(b) => b.to_vec(),
                 Err(_) => {
                     outputs[0] = Val::I64(0);
@@ -228,27 +228,27 @@ pub fn kv_get_fn(ctx: PluginKVContext) -> Function {
                     }
                 };
 
-            // Default to own plugin if not specified
-            let target_plugin = input
-                .plugin
+            // Default to own lambda if not specified
+            let target_lambda = input
+                .lambda
                 .as_ref()
                 .filter(|p| !p.is_empty())
                 .map(|p| p.as_str())
-                .unwrap_or(&ctx_guard.plugin_name);
+                .unwrap_or(&ctx_guard.lambda_name);
 
-            // Permission check: can only read from own plugin or allowed plugins
-            if !ctx_guard.can_read(target_plugin) {
+            // Permission check: can only read from own lambda or allowed lambdas
+            if !ctx_guard.can_read(target_lambda) {
                 tracing::warn!(
-                    "kv get denied: plugin '{}' tried to read from '{}' without permission",
-                    ctx_guard.plugin_name,
-                    target_plugin
+                    "kv get denied: lambda '{}' tried to read from '{}' without permission",
+                    ctx_guard.lambda_name,
+                    target_lambda
                 );
                 outputs[0] = Val::I64(0);
                 return Ok(());
             }
 
-            // Get raw value using PluginKV methods (handles locking internally)
-            let value = ctx_guard.kv.get_raw(target_plugin, &input.key);
+            // Get raw value using LambdaKV methods (handles locking internally)
+            let value = ctx_guard.kv.get_raw(target_lambda, &input.key);
 
             // Encode output as MessagePack Option<Vec<u8>>
             let output: Option<Vec<u8>> = value;
@@ -261,7 +261,7 @@ pub fn kv_get_fn(ctx: PluginKVContext) -> Function {
                 return Ok(());
             }
 
-            if plugin.memory_set_val(&mut outputs[0], &output_buf).is_err() {
+            if lambda.memory_set_val(&mut outputs[0], &output_buf).is_err() {
                 outputs[0] = Val::I64(0);
             }
             Ok(())
@@ -273,17 +273,17 @@ pub fn kv_get_fn(ctx: PluginKVContext) -> Function {
 ///
 /// Input: MessagePack encoded KVSetInput
 /// Output: i64 (0 = success, -1 = failed)
-/// Permission: always writes to own plugin KV only
-pub fn kv_set_fn(ctx: PluginKVContext) -> Function {
+/// Permission: always writes to own lambda KV only
+pub fn kv_set_fn(ctx: LambdaKVContext) -> Function {
     Function::new(
         "host_kv_set",
         [ValType::I64],
         [ValType::I64],
         UserData::new(ctx),
-        |plugin: &mut CurrentPlugin,
+        |lambda: &mut CurrentPlugin,
          inputs: &[Val],
          outputs: &mut [Val],
-         user_data: UserData<PluginKVContext>| {
+         user_data: UserData<LambdaKVContext>| {
             // Get context
             let ctx_arc = match user_data.get() {
                 Ok(ctx) => ctx,
@@ -302,14 +302,14 @@ pub fn kv_set_fn(ctx: PluginKVContext) -> Function {
                 }
             };
 
-            // Read input from plugin memory
+            // Read input from lambda memory
             let input_offset = inputs.first().and_then(|v| v.i64()).unwrap_or(0) as u64;
             if input_offset == 0 {
                 outputs[0] = Val::I64(-1);
                 return Ok(());
             }
 
-            let handle = match plugin.memory_handle(input_offset) {
+            let handle = match lambda.memory_handle(input_offset) {
                 Some(h) => h,
                 None => {
                     outputs[0] = Val::I64(-1);
@@ -317,7 +317,7 @@ pub fn kv_set_fn(ctx: PluginKVContext) -> Function {
                 }
             };
 
-            let bytes = match plugin.memory_bytes(handle) {
+            let bytes = match lambda.memory_bytes(handle) {
                 Ok(b) => b.to_vec(),
                 Err(_) => {
                     outputs[0] = Val::I64(-1);
@@ -338,7 +338,7 @@ pub fn kv_set_fn(ctx: PluginKVContext) -> Function {
             // Always writes to own KV
             ctx_guard
                 .kv
-                .set_raw(&ctx_guard.plugin_name, &input.key, input.value);
+                .set_raw(&ctx_guard.lambda_name, &input.key, input.value);
 
             outputs[0] = Val::I64(0);
             Ok(())
@@ -350,17 +350,17 @@ pub fn kv_set_fn(ctx: PluginKVContext) -> Function {
 ///
 /// Input: MessagePack encoded KVRemoveInput
 /// Output: i64 (0 = success, -1 = not found)
-/// Permission: always removes from own plugin KV only
-pub fn kv_remove_fn(ctx: PluginKVContext) -> Function {
+/// Permission: always removes from own lambda KV only
+pub fn kv_remove_fn(ctx: LambdaKVContext) -> Function {
     Function::new(
         "host_kv_remove",
         [ValType::I64],
         [ValType::I64],
         UserData::new(ctx),
-        |plugin: &mut CurrentPlugin,
+        |lambda: &mut CurrentPlugin,
          inputs: &[Val],
          outputs: &mut [Val],
-         user_data: UserData<PluginKVContext>| {
+         user_data: UserData<LambdaKVContext>| {
             // Get context
             let ctx_arc = match user_data.get() {
                 Ok(ctx) => ctx,
@@ -379,14 +379,14 @@ pub fn kv_remove_fn(ctx: PluginKVContext) -> Function {
                 }
             };
 
-            // Read input from plugin memory
+            // Read input from lambda memory
             let input_offset = inputs.first().and_then(|v| v.i64()).unwrap_or(0) as u64;
             if input_offset == 0 {
                 outputs[0] = Val::I64(-1);
                 return Ok(());
             }
 
-            let handle = match plugin.memory_handle(input_offset) {
+            let handle = match lambda.memory_handle(input_offset) {
                 Some(h) => h,
                 None => {
                     outputs[0] = Val::I64(-1);
@@ -394,7 +394,7 @@ pub fn kv_remove_fn(ctx: PluginKVContext) -> Function {
                 }
             };
 
-            let bytes = match plugin.memory_bytes(handle) {
+            let bytes = match lambda.memory_bytes(handle) {
                 Ok(b) => b.to_vec(),
                 Err(_) => {
                     outputs[0] = Val::I64(-1);
@@ -413,7 +413,7 @@ pub fn kv_remove_fn(ctx: PluginKVContext) -> Function {
                 };
 
             // Always removes from own KV
-            ctx_guard.kv.remove(&ctx_guard.plugin_name, &input.key);
+            ctx_guard.kv.remove(&ctx_guard.lambda_name, &input.key);
 
             outputs[0] = Val::I64(0);
             Ok(())
@@ -421,20 +421,20 @@ pub fn kv_remove_fn(ctx: PluginKVContext) -> Function {
     )
 }
 
-/// host_kv_list_readable: list plugins this plugin can read from
+/// host_kv_list_readable: list lambdas this lambda can read from
 ///
 /// Input: None
 /// Output: MessagePack encoded Vec<String> (includes self)
-pub fn kv_list_readable_fn(ctx: PluginKVContext) -> Function {
+pub fn kv_list_readable_fn(ctx: LambdaKVContext) -> Function {
     Function::new(
         "host_kv_list_readable",
         [],
         [ValType::I64],
         UserData::new(ctx),
-        |_plugin: &mut CurrentPlugin,
+        |_lambda: &mut CurrentPlugin,
          _inputs: &[Val],
          outputs: &mut [Val],
-         user_data: UserData<PluginKVContext>| {
+         user_data: UserData<LambdaKVContext>| {
             let ctx_arc = match user_data.get() {
                 Ok(ctx) => ctx,
                 Err(e) => {
@@ -453,7 +453,7 @@ pub fn kv_list_readable_fn(ctx: PluginKVContext) -> Function {
             };
 
             // Readable = self + allowed_kv_read
-            let mut readable = vec![ctx_guard.plugin_name.clone()];
+            let mut readable = vec![ctx_guard.lambda_name.clone()];
             readable.extend(ctx_guard.allowed_kv_read.clone());
 
             let mut output_buf = Vec::new();
@@ -465,7 +465,7 @@ pub fn kv_list_readable_fn(ctx: PluginKVContext) -> Function {
                 return Ok(());
             }
 
-            if _plugin
+            if _lambda
                 .memory_set_val(&mut outputs[0], &output_buf)
                 .is_err()
             {
@@ -476,20 +476,20 @@ pub fn kv_list_readable_fn(ctx: PluginKVContext) -> Function {
     )
 }
 
-/// host_kv_list_writable: list plugins this plugin can write to
+/// host_kv_list_writable: list lambdas this lambda can write to
 ///
 /// Input: None
 /// Output: MessagePack encoded Vec<String> (currently just self)
-pub fn kv_list_writable_fn(ctx: PluginKVContext) -> Function {
+pub fn kv_list_writable_fn(ctx: LambdaKVContext) -> Function {
     Function::new(
         "host_kv_list_writable",
         [],
         [ValType::I64],
         UserData::new(ctx),
-        |_plugin: &mut CurrentPlugin,
+        |_lambda: &mut CurrentPlugin,
          _inputs: &[Val],
          outputs: &mut [Val],
-         user_data: UserData<PluginKVContext>| {
+         user_data: UserData<LambdaKVContext>| {
             let ctx_arc = match user_data.get() {
                 Ok(ctx) => ctx,
                 Err(e) => {
@@ -507,8 +507,8 @@ pub fn kv_list_writable_fn(ctx: PluginKVContext) -> Function {
                 }
             };
 
-            // Writable = only self (write to other plugins not allowed)
-            let writable = vec![ctx_guard.plugin_name.clone()];
+            // Writable = only self (write to other lambdas not allowed)
+            let writable = vec![ctx_guard.lambda_name.clone()];
 
             let mut output_buf = Vec::new();
             if writable
@@ -519,7 +519,7 @@ pub fn kv_list_writable_fn(ctx: PluginKVContext) -> Function {
                 return Ok(());
             }
 
-            if _plugin
+            if _lambda
                 .memory_set_val(&mut outputs[0], &output_buf)
                 .is_err()
             {
@@ -534,118 +534,118 @@ pub fn kv_list_writable_fn(ctx: PluginKVContext) -> Function {
 mod tests {
     use super::*;
 
-    fn create_test_kv() -> PluginKV {
-        PluginKV::new()
+    fn create_test_kv() -> LambdaKV {
+        LambdaKV::new()
     }
 
     // =============================================================================
-    // PluginKV basic tests
+    // LambdaKV basic tests
     // =============================================================================
 
     #[test]
-    fn test_plugin_kv_new_is_empty() {
+    fn test_lambda_kv_new_is_empty() {
         let kv = create_test_kv();
-        assert!(kv.get_raw("plugin_a", "key").is_none());
+        assert!(kv.get_raw("lambda_a", "key").is_none());
     }
 
     #[test]
-    fn test_plugin_kv_set_and_get_raw() {
+    fn test_lambda_kv_set_and_get_raw() {
         let kv = create_test_kv();
-        kv.set_raw("plugin_a", "key1", vec![1, 2, 3]);
+        kv.set_raw("lambda_a", "key1", vec![1, 2, 3]);
 
-        let value = kv.get_raw("plugin_a", "key1");
+        let value = kv.get_raw("lambda_a", "key1");
         assert_eq!(value, Some(vec![1, 2, 3]));
     }
 
     #[test]
-    fn test_plugin_kv_get_nonexistent_key() {
+    fn test_lambda_kv_get_nonexistent_key() {
         let kv = create_test_kv();
-        kv.set_raw("plugin_a", "key1", vec![1, 2, 3]);
+        kv.set_raw("lambda_a", "key1", vec![1, 2, 3]);
 
-        let value = kv.get_raw("plugin_a", "nonexistent");
+        let value = kv.get_raw("lambda_a", "nonexistent");
         assert_eq!(value, None);
     }
 
     #[test]
-    fn test_plugin_kv_get_nonexistent_plugin() {
+    fn test_lambda_kv_get_nonexistent_lambda() {
         let kv = create_test_kv();
-        kv.set_raw("plugin_a", "key1", vec![1, 2, 3]);
+        kv.set_raw("lambda_a", "key1", vec![1, 2, 3]);
 
-        let value = kv.get_raw("plugin_b", "key1");
+        let value = kv.get_raw("lambda_b", "key1");
         assert_eq!(value, None);
     }
 
     #[test]
-    fn test_plugin_kv_remove_existing() {
+    fn test_lambda_kv_remove_existing() {
         let kv = create_test_kv();
-        kv.set_raw("plugin_a", "key1", vec![1, 2, 3]);
-        assert_eq!(kv.get_raw("plugin_a", "key1"), Some(vec![1, 2, 3]));
+        kv.set_raw("lambda_a", "key1", vec![1, 2, 3]);
+        assert_eq!(kv.get_raw("lambda_a", "key1"), Some(vec![1, 2, 3]));
 
-        kv.remove("plugin_a", "key1");
-        assert_eq!(kv.get_raw("plugin_a", "key1"), None);
+        kv.remove("lambda_a", "key1");
+        assert_eq!(kv.get_raw("lambda_a", "key1"), None);
     }
 
     #[test]
-    fn test_plugin_kv_remove_nonexistent() {
+    fn test_lambda_kv_remove_nonexistent() {
         let kv = create_test_kv();
-        kv.remove("plugin_a", "nonexistent"); // should not panic
+        kv.remove("lambda_a", "nonexistent"); // should not panic
     }
 
     #[test]
-    fn test_plugin_kv_remove_from_nonexistent_plugin() {
+    fn test_lambda_kv_remove_from_nonexistent_lambda() {
         let kv = create_test_kv();
-        kv.set_raw("plugin_a", "key1", vec![1, 2, 3]);
-        kv.remove("plugin_b", "key1"); // different plugin, should not affect plugin_a
-        assert_eq!(kv.get_raw("plugin_a", "key1"), Some(vec![1, 2, 3]));
+        kv.set_raw("lambda_a", "key1", vec![1, 2, 3]);
+        kv.remove("lambda_b", "key1"); // different lambda, should not affect lambda_a
+        assert_eq!(kv.get_raw("lambda_a", "key1"), Some(vec![1, 2, 3]));
     }
 
     #[test]
-    fn test_plugin_kv_multiple_plugins_isolated() {
+    fn test_lambda_kv_multiple_lambdas_isolated() {
         let kv = create_test_kv();
-        kv.set_raw("plugin_a", "key1", vec![1]);
-        kv.set_raw("plugin_b", "key1", vec![2]);
-        kv.set_raw("plugin_a", "key2", vec![3]);
+        kv.set_raw("lambda_a", "key1", vec![1]);
+        kv.set_raw("lambda_b", "key1", vec![2]);
+        kv.set_raw("lambda_a", "key2", vec![3]);
 
-        assert_eq!(kv.get_raw("plugin_a", "key1"), Some(vec![1]));
-        assert_eq!(kv.get_raw("plugin_b", "key1"), Some(vec![2]));
-        assert_eq!(kv.get_raw("plugin_a", "key2"), Some(vec![3]));
-        assert_eq!(kv.get_raw("plugin_b", "key2"), None);
+        assert_eq!(kv.get_raw("lambda_a", "key1"), Some(vec![1]));
+        assert_eq!(kv.get_raw("lambda_b", "key1"), Some(vec![2]));
+        assert_eq!(kv.get_raw("lambda_a", "key2"), Some(vec![3]));
+        assert_eq!(kv.get_raw("lambda_b", "key2"), None);
     }
 
     #[test]
-    fn test_plugin_kv_same_key_overwrites() {
+    fn test_lambda_kv_same_key_overwrites() {
         let kv = create_test_kv();
-        kv.set_raw("plugin_a", "key1", vec![1, 2, 3]);
-        kv.set_raw("plugin_a", "key1", vec![4, 5, 6]);
+        kv.set_raw("lambda_a", "key1", vec![1, 2, 3]);
+        kv.set_raw("lambda_a", "key1", vec![4, 5, 6]);
 
-        let value = kv.get_raw("plugin_a", "key1");
+        let value = kv.get_raw("lambda_a", "key1");
         assert_eq!(value, Some(vec![4, 5, 6]));
     }
 
     // =============================================================================
-    // PluginKV serialization tests (set/get with typed values)
+    // LambdaKV serialization tests (set/get with typed values)
     // =============================================================================
 
     #[test]
-    fn test_plugin_kv_set_get_string() {
+    fn test_lambda_kv_set_get_string() {
         let kv = create_test_kv();
-        kv.set("plugin_a", "name", &"Alice");
+        kv.set("lambda_a", "name", &"Alice");
 
-        let value: Option<String> = kv.get("plugin_a", "name");
+        let value: Option<String> = kv.get("lambda_a", "name");
         assert_eq!(value, Some("Alice".to_string()));
     }
 
     #[test]
-    fn test_plugin_kv_set_get_u64() {
+    fn test_lambda_kv_set_get_u64() {
         let kv = create_test_kv();
-        kv.set("plugin_a", "count", &42u64);
+        kv.set("lambda_a", "count", &42u64);
 
-        let value: Option<u64> = kv.get("plugin_a", "count");
+        let value: Option<u64> = kv.get("lambda_a", "count");
         assert_eq!(value, Some(42));
     }
 
     #[test]
-    fn test_plugin_kv_set_get_struct() {
+    fn test_lambda_kv_set_get_struct() {
         let kv = create_test_kv();
 
         #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -658,87 +658,87 @@ mod tests {
             name: "Bob".to_string(),
             age: 30,
         };
-        kv.set("plugin_a", "user", &user);
+        kv.set("lambda_a", "user", &user);
 
-        let retrieved: Option<UserData> = kv.get("plugin_a", "user");
+        let retrieved: Option<UserData> = kv.get("lambda_a", "user");
         assert_eq!(retrieved, Some(user));
     }
 
     // =============================================================================
-    // PluginKVContext permission tests
+    // LambdaKVContext permission tests
     // =============================================================================
 
     #[test]
-    fn test_plugin_kv_context_can_read_self() {
+    fn test_lambda_kv_context_can_read_self() {
         let kv = Arc::new(create_test_kv());
-        let ctx = PluginKVContext::new(kv, "my_plugin", vec![]);
+        let ctx = LambdaKVContext::new(kv, "my_lambda", vec![]);
 
-        assert!(ctx.can_read("my_plugin"));
+        assert!(ctx.can_read("my_lambda"));
     }
 
     #[test]
-    fn test_plugin_kv_context_can_read_allowed() {
+    fn test_lambda_kv_context_can_read_allowed() {
         let kv = Arc::new(create_test_kv());
-        let ctx = PluginKVContext::new(
+        let ctx = LambdaKVContext::new(
             kv,
-            "my_plugin",
-            vec!["plugin_a".to_string(), "plugin_b".to_string()],
+            "my_lambda",
+            vec!["lambda_a".to_string(), "lambda_b".to_string()],
         );
 
-        assert!(ctx.can_read("plugin_a"));
-        assert!(ctx.can_read("plugin_b"));
+        assert!(ctx.can_read("lambda_a"));
+        assert!(ctx.can_read("lambda_b"));
     }
 
     #[test]
-    fn test_plugin_kv_context_cannot_read_unlisted() {
+    fn test_lambda_kv_context_cannot_read_unlisted() {
         let kv = Arc::new(create_test_kv());
-        let ctx = PluginKVContext::new(kv, "my_plugin", vec!["plugin_a".to_string()]);
+        let ctx = LambdaKVContext::new(kv, "my_lambda", vec!["lambda_a".to_string()]);
 
-        assert!(!ctx.can_read("plugin_b"));
-        assert!(!ctx.can_read("other_plugin"));
+        assert!(!ctx.can_read("lambda_b"));
+        assert!(!ctx.can_read("other_lambda"));
     }
 
     #[test]
-    fn test_plugin_kv_context_clone_is_independent() {
+    fn test_lambda_kv_context_clone_is_independent() {
         let kv = Arc::new(create_test_kv());
-        let ctx1 = PluginKVContext::new(kv.clone(), "plugin_a", vec![]);
+        let ctx1 = LambdaKVContext::new(kv.clone(), "lambda_a", vec![]);
         let ctx2 = ctx1.clone();
 
         // Both should work independently
-        assert_eq!(ctx1.plugin_name, "plugin_a");
-        assert_eq!(ctx2.plugin_name, "plugin_a");
+        assert_eq!(ctx1.lambda_name, "lambda_a");
+        assert_eq!(ctx2.lambda_name, "lambda_a");
     }
 
     // =============================================================================
-    // PluginKV concurrency safety (Send + Sync)
+    // LambdaKV concurrency safety (Send + Sync)
     // =============================================================================
 
     #[test]
-    fn test_plugin_kv_is_send() {
+    fn test_lambda_kv_is_send() {
         fn assert_send<T: Send>() {}
-        assert_send::<PluginKV>();
+        assert_send::<LambdaKV>();
     }
 
     #[test]
-    fn test_plugin_kv_is_sync() {
+    fn test_lambda_kv_is_sync() {
         fn assert_sync<T: Sync>() {}
-        assert_sync::<PluginKV>();
+        assert_sync::<LambdaKV>();
     }
 
     #[test]
-    fn test_plugin_kv_context_is_send() {
+    fn test_lambda_kv_context_is_send() {
         fn assert_send<T: Send>() {}
         let kv = Arc::new(create_test_kv());
-        let _ctx = PluginKVContext::new(kv, "test", vec![]);
-        assert_send::<PluginKVContext>();
+        let _ctx = LambdaKVContext::new(kv, "test", vec![]);
+        assert_send::<LambdaKVContext>();
     }
 
     #[test]
-    fn test_plugin_kv_context_is_sync() {
+    fn test_lambda_kv_context_is_sync() {
         fn assert_sync<T: Sync>() {}
         let kv = Arc::new(create_test_kv());
-        let _ctx = PluginKVContext::new(kv, "test", vec![]);
-        assert_sync::<PluginKVContext>();
+        let _ctx = LambdaKVContext::new(kv, "test", vec![]);
+        assert_sync::<LambdaKVContext>();
     }
 }
 
@@ -748,41 +748,41 @@ mod integration_tests {
     use extism::{Manifest, Plugin, Wasm};
     use std::sync::Arc;
 
-    // WASM file for test-kv plugin
+    // WASM file for test-kv lambda
     const TEST_KV_WASM: &[u8] =
         include_bytes!("../../../target/wasm32-unknown-unknown/release/test_kv.wasm");
 
-    fn create_test_kv() -> PluginKV {
-        PluginKV::new()
+    fn create_test_kv() -> LambdaKV {
+        LambdaKV::new()
     }
 
-    fn run_plugin_with_kv<F>(
-        kv: Arc<PluginKV>,
-        plugin_name: &str,
+    fn run_lambda_with_kv<F>(
+        kv: Arc<LambdaKV>,
+        lambda_name: &str,
         allowed_kv_read: Vec<String>,
         f: F,
     ) where
         F: FnOnce(&mut Plugin),
     {
-        let functions = kv_functions(kv, plugin_name, allowed_kv_read);
+        let functions = kv_functions(kv, lambda_name, allowed_kv_read);
 
         let manifest = Manifest::new([Wasm::data(TEST_KV_WASM)]);
-        let mut plugin = Plugin::new(manifest, functions, true).unwrap();
-        f(&mut plugin);
+        let mut lambda = Plugin::new(manifest, functions, true).unwrap();
+        f(&mut lambda);
     }
 
     #[test]
     fn test_integration_kv_set_and_get() {
         let kv = Arc::new(create_test_kv());
 
-        run_plugin_with_kv(kv, "test-plugin", vec![], |plugin: &mut Plugin| {
+        run_lambda_with_kv(kv, "test-lambda", vec![], |lambda: &mut Plugin| {
             // First call test_kv_set - this exercises host_kv_set
-            let _set_result: String = plugin.call("test_kv_set", "").unwrap();
+            let _set_result: String = lambda.call("test_kv_set", "").unwrap();
             // Then call test_kv_get - this exercises host_kv_get
-            let get_result: String = plugin.call("test_kv_get", "").unwrap();
-            // Result is JSON like {"success":true,"message":"test_value_from_plugin"}
+            let get_result: String = lambda.call("test_kv_get", "").unwrap();
+            // Result is JSON like {"success":true,"message":"test_value_from_lambda"}
             assert!(get_result.contains("success"));
-            assert!(get_result.contains("test_value_from_plugin"));
+            assert!(get_result.contains("test_value_from_lambda"));
         });
     }
 
@@ -790,14 +790,14 @@ mod integration_tests {
     fn test_integration_kv_remove() {
         let kv = Arc::new(create_test_kv());
 
-        run_plugin_with_kv(kv, "test-plugin", vec![], |plugin: &mut Plugin| {
+        run_lambda_with_kv(kv, "test-lambda", vec![], |lambda: &mut Plugin| {
             // Set a value first
-            let _set_result: String = plugin.call("test_kv_set", "").unwrap();
+            let _set_result: String = lambda.call("test_kv_set", "").unwrap();
             // Verify it was set
-            let get_result: String = plugin.call("test_kv_get", "").unwrap();
+            let get_result: String = lambda.call("test_kv_get", "").unwrap();
             assert!(get_result.contains("success"));
             // Remove it
-            let remove_result: String = plugin.call("test_kv_remove", "").unwrap();
+            let remove_result: String = lambda.call("test_kv_remove", "").unwrap();
             assert!(remove_result.contains("success"));
         });
     }
@@ -806,17 +806,17 @@ mod integration_tests {
     fn test_integration_kv_list_readable() {
         let kv = Arc::new(create_test_kv());
 
-        run_plugin_with_kv(
+        run_lambda_with_kv(
             kv,
-            "my-plugin",
-            vec!["other-plugin".to_string()],
-            |plugin: &mut Plugin| {
+            "my-lambda",
+            vec!["other-lambda".to_string()],
+            |lambda: &mut Plugin| {
                 // Call test_kv_list_readable
-                let result: String = plugin.call("test_kv_list_readable", "").unwrap();
-                let plugins: Vec<String> = serde_json::from_str(&result).unwrap();
-                // Should include self and allowed plugins
-                assert!(plugins.contains(&"my-plugin".to_string()));
-                assert!(plugins.contains(&"other-plugin".to_string()));
+                let result: String = lambda.call("test_kv_list_readable", "").unwrap();
+                let lambdas: Vec<String> = serde_json::from_str(&result).unwrap();
+                // Should include self and allowed lambdas
+                assert!(lambdas.contains(&"my-lambda".to_string()));
+                assert!(lambdas.contains(&"other-lambda".to_string()));
             },
         );
     }
@@ -825,16 +825,16 @@ mod integration_tests {
     fn test_integration_kv_list_writable() {
         let kv = Arc::new(create_test_kv());
 
-        run_plugin_with_kv(
+        run_lambda_with_kv(
             kv,
-            "my-plugin",
-            vec!["other-plugin".to_string()],
-            |plugin: &mut Plugin| {
+            "my-lambda",
+            vec!["other-lambda".to_string()],
+            |lambda: &mut Plugin| {
                 // Call test_kv_list_writable
-                let result: String = plugin.call("test_kv_list_writable", "").unwrap();
-                let plugins: Vec<String> = serde_json::from_str(&result).unwrap();
-                // Should only include self (writes to other plugins not allowed)
-                assert_eq!(plugins, vec!["my-plugin"]);
+                let result: String = lambda.call("test_kv_list_writable", "").unwrap();
+                let lambdas: Vec<String> = serde_json::from_str(&result).unwrap();
+                // Should only include self (writes to other lambdas not allowed)
+                assert_eq!(lambdas, vec!["my-lambda"]);
             },
         );
     }

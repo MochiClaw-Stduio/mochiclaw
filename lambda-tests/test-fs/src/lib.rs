@@ -1,6 +1,6 @@
-//! Test plugin for filesystem integration testing
+//! Test lambda for filesystem integration testing
 //!
-//! This plugin exposes functions to test host filesystem operations.
+//! This lambda exposes functions to test host filesystem operations.
 
 use mochiclaw_sdk::host::fs::{fs_edit, fs_list, fs_read, fs_write};
 use mochiclaw_sdk::{FnResult, plugin_fn};
@@ -228,8 +228,8 @@ pub fn test_fs_read_pagination(_params: String) -> FnResult<String> {
     }
 }
 
-/// Get plugin name
+/// Get lambda name
 #[plugin_fn]
 pub fn get_name(_params: String) -> FnResult<String> {
-    Ok("test-fs-plugin".to_string())
+    Ok("test-fs-lambda".to_string())
 }

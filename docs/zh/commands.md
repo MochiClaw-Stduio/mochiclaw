@@ -93,7 +93,7 @@ if let Some(response) = registry.execute("weixin", "user123", "mycmd", "arg1 arg
 command = true
 ```
 
-插件命令通过 `PluginHost::call` 调用 `execute` 函数。
+插件命令通过 `LambdaHost::call` 调用 `execute` 函数。
 
 ## 解析
 

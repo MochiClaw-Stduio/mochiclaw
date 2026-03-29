@@ -8,7 +8,7 @@ use crate::logging_utils::{cleanup_old_logs, resolve_log_dir};
 
 use mochiclaw_config::{ChannelConfig, Config};
 use mochiclaw_core::{
-    AgentLoop, AsyncHttpExecutor, ContextBuilder, MessageBus, PluginHost, discover,
+    AgentLoop, AsyncHttpExecutor, ContextBuilder, LambdaHost, MessageBus, discover,
 };
 use mochiclaw_sdk::lambda::{
     Action, CheckLoginInput, CheckLoginOutput, Effect, LambdaInput, LambdaOutput, LoginInput,
@@ -26,7 +26,7 @@ pub async fn start(config: Config, config_path: PathBuf) -> Result<()> {
         cleanup_old_logs(&log_dir, max_age_days);
     }
 
-    // Create plugin host with optional fallback proxy from HTTP_PROXY
+    // Create lambda host with optional fallback proxy from HTTP_PROXY
     let fallback_proxy = if config.runtime.network.use_system_proxy {
         std::env::var("HTTP_PROXY").ok()
     } else {
@@ -37,46 +37,46 @@ pub async fn start(config: Config, config_path: PathBuf) -> Result<()> {
         config.runtime.network.use_system_proxy,
         fallback_proxy
     );
-    let mut plugin_host =
-        PluginHost::new().with_http_proxy(fallback_proxy, config.runtime.network.use_system_proxy);
+    let mut lambda_host =
+        LambdaHost::new().with_http_proxy(fallback_proxy, config.runtime.network.use_system_proxy);
 
-    // Discover and load plugins based on features
-    for dir in &config.runtime.plugin_dirs {
-        let plugin_base_dir = PathBuf::from(dir);
-        tracing::info!("scanning for plugins in {}", plugin_base_dir.display());
+    // Discover and load lambdas based on features
+    for dir in &config.runtime.lambda_dirs {
+        let lambda_base_dir = PathBuf::from(dir);
+        tracing::info!("scanning for lambdas in {}", lambda_base_dir.display());
 
-        let discovered = match discover(&plugin_base_dir) {
+        let discovered = match discover(&lambda_base_dir) {
             Ok(d) => d,
             Err(e) => {
-                tracing::warn!("failed to scan plugin directory: {}", e);
+                tracing::warn!("failed to scan lambda directory: {}", e);
                 continue;
             }
         };
 
-        let host = &mut plugin_host;
-        for plugin in discovered {
-            // Get per-plugin config if configured
-            let plugin_config = config
-                .plugins
-                .get(&plugin.manifest.name)
+        let host = &mut lambda_host;
+        for lambda in discovered {
+            // Get per-lambda config if configured
+            let lambda_config = config
+                .lambdas
+                .get(&lambda.manifest.name)
                 .cloned()
                 .unwrap_or_default();
 
-            match host.load_plugin(
-                &plugin.manifest.name,
-                &plugin.wasm_path,
-                &plugin.manifest,
-                &plugin_config,
+            match host.load_lambda(
+                &lambda.manifest.name,
+                &lambda.wasm_path,
+                &lambda.manifest,
+                &lambda_config,
             ) {
                 Ok(()) => {}
                 Err(e) => {
-                    tracing::warn!("failed to load plugin: {}", e);
+                    tracing::warn!("failed to load lambda: {}", e);
                 }
             }
         }
     }
 
-    tracing::info!("loaded {} plugins", plugin_host.plugin_count());
+    tracing::info!("loaded {} lambdas", lambda_host.lambda_count());
 
     // Create message bus
     let bus = Arc::new(MessageBus::new());
@@ -87,7 +87,7 @@ pub async fn start(config: Config, config_path: PathBuf) -> Result<()> {
     // Release templates to workspace at startup
     ContextBuilder::new(workspace.clone()).release_templates();
 
-    let agent = AgentLoop::new(bus.clone(), Arc::new(plugin_host), &config, workspace);
+    let agent = AgentLoop::new(bus.clone(), Arc::new(lambda_host), &config, workspace);
 
     // Run agent
     let _agent_handle = tokio::spawn(async move {
@@ -120,53 +120,53 @@ pub async fn onboard(config_path: PathBuf) -> Result<()> {
     Ok(())
 }
 
-/// Login to a channel plugin using lambda_function
-pub async fn login(plugin_name: &str, mut config: Config, config_path: PathBuf) -> Result<()> {
-    // Discover plugins from configured plugin directories
-    let mut discovered_plugin = None;
-    for dir in &config.runtime.plugin_dirs {
-        let plugin_base_dir = PathBuf::from(dir);
-        match discover(&plugin_base_dir) {
+/// Login to a channel lambda using lambda_function
+pub async fn login(lambda_name: &str, mut config: Config, config_path: PathBuf) -> Result<()> {
+    // Discover lambdas from configured lambda directories
+    let mut discovered_lambda = None;
+    for dir in &config.runtime.lambda_dirs {
+        let lambda_base_dir = PathBuf::from(dir);
+        match discover(&lambda_base_dir) {
             Ok(discovered) => {
                 if let Some(p) = discovered
                     .into_iter()
-                    .find(|p| p.manifest.name == plugin_name)
+                    .find(|p| p.manifest.name == lambda_name)
                 {
-                    discovered_plugin = Some(p);
+                    discovered_lambda = Some(p);
                     break;
                 }
             }
             Err(e) => {
-                tracing::warn!("failed to scan plugin directory {}: {}", dir, e);
+                tracing::warn!("failed to scan lambda directory {}: {}", dir, e);
             }
         }
     }
 
-    let (manifest, wasm_path) = match discovered_plugin {
+    let (manifest, wasm_path) = match discovered_lambda {
         Some(p) => (p.manifest, p.wasm_path),
         None => {
             anyhow::bail!(
-                "plugin '{}' not found in configured plugin_dirs: {:?}",
-                plugin_name,
-                config.runtime.plugin_dirs
+                "lambda '{}' not found in configured lambda_dirs: {:?}",
+                lambda_name,
+                config.runtime.lambda_dirs
             );
         }
     };
 
-    // Load plugin using manifest name
-    let mut plugin_host = PluginHost::new();
-    plugin_host.load_plugin(&manifest.name, &wasm_path, &manifest, &Default::default())?;
-    tracing::info!("loaded plugin '{}'", manifest.name);
+    // Load lambda using manifest name
+    let mut lambda_host = LambdaHost::new();
+    lambda_host.load_lambda(&manifest.name, &wasm_path, &manifest, &Default::default())?;
+    tracing::info!("loaded lambda '{}'", manifest.name);
 
     // Wrap in Arc for HTTP executor
-    let plugin_host = Arc::new(plugin_host);
+    let lambda_host = Arc::new(lambda_host);
 
-    // Create HTTP executor for this plugin
-    let http_executor = AsyncHttpExecutor::new(Arc::clone(&plugin_host));
+    // Create HTTP executor for this lambda
+    let http_executor = AsyncHttpExecutor::new(Arc::clone(&lambda_host));
 
-    // Get plugin config for login
-    let plugin_config = config
-        .plugins
+    // Get lambda config for login
+    let lambda_config = config
+        .lambdas
         .get(&manifest.name)
         .cloned()
         .unwrap_or_default();
@@ -178,13 +178,13 @@ pub async fn login(plugin_name: &str, mut config: Config, config_path: PathBuf) 
         action: Action::Login,
         state: current_state.clone(),
         payload: rmp_serde::to_vec(&LoginInput {
-            config: serde_json::to_vec(&plugin_config)?,
+            config: serde_json::to_vec(&lambda_config)?,
         })?,
         effect_results: Vec::new(),
     };
 
     let login_output: LambdaOutput =
-        plugin_host.call(&manifest.name, "lambda_function", &login_input)?;
+        lambda_host.call(&manifest.name, "lambda_function", &login_input)?;
 
     // Use loop mechanism: if effects returned, execute and call again with effect_results
     let login_result = if !login_output.effects.is_empty() {
@@ -209,7 +209,7 @@ pub async fn login(plugin_name: &str, mut config: Config, config_path: PathBuf) 
         };
 
         let login_output: LambdaOutput =
-            plugin_host.call(&manifest.name, "lambda_function", &login_input)?;
+            lambda_host.call(&manifest.name, "lambda_function", &login_input)?;
         rmp_serde::from_slice::<LoginOutput>(&login_output.result)?
     } else {
         // No effects means we got LoginOutput directly (already logged in or error)
@@ -254,7 +254,7 @@ pub async fn login(plugin_name: &str, mut config: Config, config_path: PathBuf) 
                         };
 
                         let check_output: LambdaOutput =
-                            plugin_host.call(&manifest.name, "lambda_function", &check_input)?;
+                            lambda_host.call(&manifest.name, "lambda_function", &check_input)?;
 
                         // Use loop mechanism
                         let check_result = if !check_output.effects.is_empty() {
@@ -277,7 +277,7 @@ pub async fn login(plugin_name: &str, mut config: Config, config_path: PathBuf) 
                                 }],
                             };
 
-                            let check_output: LambdaOutput = plugin_host.call(
+                            let check_output: LambdaOutput = lambda_host.call(
                                 &manifest.name,
                                 "lambda_function",
                                 &check_input,
@@ -303,7 +303,7 @@ pub async fn login(plugin_name: &str, mut config: Config, config_path: PathBuf) 
                                 };
                                 save_login_to_config(
                                     &mut config,
-                                    plugin_name,
+                                    lambda_name,
                                     &final_login_result,
                                     &config_path,
                                 )?;
@@ -341,7 +341,7 @@ pub async fn login(plugin_name: &str, mut config: Config, config_path: PathBuf) 
 
 fn save_login_to_config(
     config: &mut Config,
-    plugin_name: &str,
+    lambda_name: &str,
     resp: &LoginOutput,
     config_path: &Path,
 ) -> Result<()> {
@@ -358,7 +358,7 @@ fn save_login_to_config(
         };
         config
             .channels
-            .insert(plugin_name.to_string(), channel_config);
+            .insert(lambda_name.to_string(), channel_config);
         config.save(config_path)?;
         println!("token saved to config");
     }

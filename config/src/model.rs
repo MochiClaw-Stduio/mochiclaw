@@ -8,7 +8,7 @@ use serde::Serialize;
 pub struct ModelConfig {
     /// The actual model name (e.g., "gpt-4", "claude-3-sonnet")
     pub model: String,
-    /// Provider plugin to use (e.g., "mochiclaw-openai")
+    /// Provider lambda to use (e.g., "mochiclaw-openai")
     pub provider: String,
     /// API endpoint base URL
     #[serde(default)]

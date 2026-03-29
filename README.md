@@ -23,9 +23,9 @@ mochiclaw/
 ├── cli          # CLI 主程序
 ├── config       # 配置管理
 ├── core         # 核心运行时
-├── plugin       # 插件管理
+├── lambda       # 插件管理
 ├── sdk          # 插件 SDK
-├── plugins/               # 官方插件
+├── lambdas/               # 官方插件
 │   ├── openai   # OpenAI 兼容 Provider
 │   ├── fs       # 文件系统工具
 │   └── weixin   # 微信 Channel
@@ -48,7 +48,7 @@ just build
 just build-native
 
 # 仅构建插件
-just build-plugin
+just build-lambda
 ```
 
 ### 配置
@@ -62,7 +62,7 @@ max_iterations = 40
 workspace = "./workspace"
 
 [runtime]
-plugin_dirs = ["./target/plugins"]
+lambda_dirs = ["./target/lambdas"]
 
 [models.deepseek-chat]
 model = "deepseek-chat"

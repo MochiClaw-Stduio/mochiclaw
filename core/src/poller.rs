@@ -5,7 +5,7 @@ use crate::error::Error;
 use crate::http_executor::AsyncHttpExecutor;
 use crate::lambda_loop::lambda_call_typed;
 use mochiclaw_config::ChannelConfig;
-use mochiclaw_lambda::PluginHost;
+use mochiclaw_lambda::LambdaHost;
 use mochiclaw_sdk::lambda::{Action, DigestOutput, PreparePollInput};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -16,7 +16,7 @@ pub fn spawn_channel_poller(
     channel_name: String,
     config: ChannelConfig,
     bus: Arc<MessageBus>,
-    plugin_host: Arc<PluginHost>,
+    lambda_host: Arc<LambdaHost>,
     http_executor: Arc<AsyncHttpExecutor>,
     poll_state: Arc<tokio::sync::Mutex<HashMap<String, Vec<u8>>>>,
 ) -> tokio::task::JoinHandle<()> {
@@ -38,7 +38,7 @@ pub fn spawn_channel_poller(
             };
 
             let result: Result<DigestOutput, Error> = lambda_call_typed(
-                &plugin_host,
+                &lambda_host,
                 Arc::clone(&http_executor),
                 &channel_name,
                 Action::PreparePoll,

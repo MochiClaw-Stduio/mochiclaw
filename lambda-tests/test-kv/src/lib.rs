@@ -1,6 +1,6 @@
-//! Test plugin for KV integration testing
+//! Test lambda for KV integration testing
 //!
-//! This plugin exposes functions to test host KV operations.
+//! This lambda exposes functions to test host KV operations.
 
 use mochiclaw_sdk::host::kv::{kv_get, kv_list_readable, kv_list_writable, kv_remove, kv_set};
 use mochiclaw_sdk::{FnResult, plugin_fn};
@@ -17,7 +17,7 @@ struct TestResult {
 #[plugin_fn]
 pub fn test_kv_set(_params: String) -> FnResult<String> {
     let key = "test_key";
-    let value = "test_value_from_plugin";
+    let value = "test_value_from_lambda";
 
     let success = kv_set(key, &value);
     let result = TestResult {
@@ -75,7 +75,7 @@ pub fn test_kv_remove(_params: String) -> FnResult<String> {
 #[plugin_fn]
 pub fn test_kv_list_readable(_params: String) -> FnResult<String> {
     match kv_list_readable() {
-        Some(plugins) => Ok(serde_json::to_string(&plugins).unwrap_or_default()),
+        Some(lambdas) => Ok(serde_json::to_string(&lambdas).unwrap_or_default()),
         None => Ok("[]".to_string()),
     }
 }
@@ -84,13 +84,13 @@ pub fn test_kv_list_readable(_params: String) -> FnResult<String> {
 #[plugin_fn]
 pub fn test_kv_list_writable(_params: String) -> FnResult<String> {
     match kv_list_writable() {
-        Some(plugins) => Ok(serde_json::to_string(&plugins).unwrap_or_default()),
+        Some(lambdas) => Ok(serde_json::to_string(&lambdas).unwrap_or_default()),
         None => Ok("[]".to_string()),
     }
 }
 
-/// Get plugin name
+/// Get lambda name
 #[plugin_fn]
 pub fn get_name(_params: String) -> FnResult<String> {
-    Ok("test-kv-plugin".to_string())
+    Ok("test-kv-lambda".to_string())
 }

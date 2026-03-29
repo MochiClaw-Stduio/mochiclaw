@@ -1,10 +1,10 @@
-//! Channel plugin configuration
+//! Channel lambda configuration
 
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 
-/// Channel-specific plugin configuration
+/// Channel-specific lambda configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelConfig {
     #[serde(default = "default_enabled")]
@@ -12,7 +12,7 @@ pub struct ChannelConfig {
     /// Authentication token
     #[serde(default)]
     pub token: Option<String>,
-    /// Plugin-specific extra settings (e.g., base_url, etc.)
+    /// Lambda-specific extra settings (e.g., base_url, etc.)
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
 }

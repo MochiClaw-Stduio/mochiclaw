@@ -15,12 +15,12 @@ pub fn rand_u64_fn() -> Function {
         [],
         [ValType::I64],
         UserData::Rust(std::sync::Arc::new(std::sync::Mutex::new(()))),
-        |plugin: &mut CurrentPlugin,
+        |lambda: &mut CurrentPlugin,
          _inputs: &[Val],
          outputs: &mut [Val],
          _user_data: UserData<()>| {
             let val = rand::random::<u64>();
-            plugin.memory_set_val(&mut outputs[0], val)
+            lambda.memory_set_val(&mut outputs[0], val)
         },
     )
 }
@@ -32,7 +32,7 @@ pub fn rand_bytes_fn() -> Function {
         [ValType::I64],
         [ValType::I64],
         UserData::Rust(std::sync::Arc::new(std::sync::Mutex::new(()))),
-        |plugin: &mut CurrentPlugin,
+        |lambda: &mut CurrentPlugin,
          inputs: &[Val],
          outputs: &mut [Val],
          _user_data: UserData<()>| {
@@ -42,7 +42,7 @@ pub fn rand_bytes_fn() -> Function {
             };
             let mut buf = vec![0u8; num_bytes];
             rand::thread_rng().fill(&mut buf[..]);
-            plugin.memory_set_val(&mut outputs[0], &buf)
+            lambda.memory_set_val(&mut outputs[0], &buf)
         },
     )
 }
@@ -53,19 +53,19 @@ mod integration_tests {
     use extism::{Manifest, Plugin, Wasm};
     use serde::Deserialize;
 
-    // WASM file for test-random plugin
+    // WASM file for test-random lambda
     const TEST_RANDOM_WASM: &[u8] =
         include_bytes!("../../../target/wasm32-unknown-unknown/release/test_random.wasm");
 
-    fn run_plugin_with_rand<F>(f: F)
+    fn run_lambda_with_rand<F>(f: F)
     where
         F: FnOnce(&mut Plugin),
     {
         let functions = rand_functions();
 
         let manifest = Manifest::new([Wasm::data(TEST_RANDOM_WASM)]);
-        let mut plugin = Plugin::new(manifest, functions, true).unwrap();
-        f(&mut plugin);
+        let mut lambda = Plugin::new(manifest, functions, true).unwrap();
+        f(&mut lambda);
     }
 
     #[derive(Debug, Deserialize)]
@@ -76,8 +76,8 @@ mod integration_tests {
 
     #[test]
     fn test_integration_rand_u64() {
-        run_plugin_with_rand(|plugin: &mut Plugin| {
-            let result: String = plugin.call("test_rand_u64", "").unwrap();
+        run_lambda_with_rand(|lambda: &mut Plugin| {
+            let result: String = lambda.call("test_rand_u64", "").unwrap();
             let result: TestResult = serde_json::from_str(&result).unwrap();
             assert!(result.success);
             let _value: u64 = result.message.parse().unwrap();
@@ -86,8 +86,8 @@ mod integration_tests {
 
     #[test]
     fn test_integration_rand_u32() {
-        run_plugin_with_rand(|plugin: &mut Plugin| {
-            let result: String = plugin.call("test_rand_u32", "").unwrap();
+        run_lambda_with_rand(|lambda: &mut Plugin| {
+            let result: String = lambda.call("test_rand_u32", "").unwrap();
             let result: TestResult = serde_json::from_str(&result).unwrap();
             assert!(result.success);
             let _value: u32 = result.message.parse().unwrap();
@@ -96,8 +96,8 @@ mod integration_tests {
 
     #[test]
     fn test_integration_rand_bytes() {
-        run_plugin_with_rand(|plugin: &mut Plugin| {
-            let result: String = plugin.call("test_rand_bytes", "").unwrap();
+        run_lambda_with_rand(|lambda: &mut Plugin| {
+            let result: String = lambda.call("test_rand_bytes", "").unwrap();
             let result: TestResult = serde_json::from_str(&result).unwrap();
             assert!(result.success);
             assert!(result.message.starts_with('['));

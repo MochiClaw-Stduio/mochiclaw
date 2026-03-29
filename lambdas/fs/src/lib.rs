@@ -1,4 +1,4 @@
-//! Filesystem Tool Plugin
+//! Filesystem Tool Lambda
 //!
 //! Provides read_file, write_file, edit_file, and list_dir tools.
 //! Uses lambda_function as the unified entry point.
@@ -24,7 +24,7 @@ pub fn lambda_function(params: LambdaInput) -> FnResult<LambdaOutput> {
             effects: vec![],
             result: ToolExecutionResponse {
                 result: String::new(),
-                error: Some("fs plugin only supports GetTools and ExecuteTool".to_string()),
+                error: Some("fs lambda only supports GetTools and ExecuteTool".to_string()),
             }
             .to_bytes()?,
             new_state: Vec::new(),

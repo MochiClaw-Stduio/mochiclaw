@@ -202,7 +202,7 @@ pub struct DigestChatInput {
 #[derive(Serialize, Deserialize, Debug, Clone, FromBytes, ToBytes)]
 #[encoding(Msgpack)]
 pub struct LoginInput {
-    /// Plugin-specific config bytes (e.g., previously saved token)
+    /// Lambda-specific config bytes (e.g., previously saved token)
     pub config: Vec<u8>,
 }
 

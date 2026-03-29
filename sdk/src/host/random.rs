@@ -10,7 +10,7 @@ extern "ExtismHost" {
     /// Returns a cryptographically random u64
     fn host_rand_u64() -> u64;
 
-    /// Allocates memory in plugin, fills with random bytes, returns offset
+    /// Allocates memory in lambda, fills with random bytes, returns offset
     fn host_rand_bytes(len: u64) -> u64;
 }
 

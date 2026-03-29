@@ -6,7 +6,7 @@
 
 ## Overview
 
-Mochiclaw is a plugin-based AI Agent runtime. The architecture consists of four main layers:
+Mochiclaw is a lambda-based AI Agent runtime. The architecture consists of four main layers:
 
 ```
 ┌─────────────────────────────────────────┐
@@ -17,12 +17,12 @@ Mochiclaw is a plugin-based AI Agent runtime. The architecture consists of four 
 │  │AgentLoop │ │MessageBus│ │Session  │  │
 │  └──────────┘ └──────────┘ └─────────┘  │
 ├─────────────────────────────────────────┤
-│            mochiclaw-plugin             │  Plugin Host (Extism)
+│            mochiclaw-lambda             │  Lambda Host (Extism)
 │  ┌──────────────────────────────────┐   │
-│  │  PluginHost  │  Pool  │ Host Fn  │   │
+│  │  LambdaHost  │  Pool  │ Host Fn  │   │
 │  └──────────────────────────────────┘   │
 ├─────────────────────────────────────────┤
-│              plugins/                   │  WASM Plugins
+│              lambdas/                   │  WASM Lambdas
 │  ┌─────────┐ ┌─────────┐ ┌─────────┐    │
 │  │ OpenAI  │ │   FS    │ │ WeChat  │    │
 │  │Provider │ │  Tool   │ │ Channel │    │
@@ -36,10 +36,10 @@ Mochiclaw is a plugin-based AI Agent runtime. The architecture consists of four 
 
 The `AgentLoop` is the central orchestrator:
 
-1. **Poll** - Query channel plugins for new messages
+1. **Poll** - Query channel lambdas for new messages
 2. **Route** - Direct messages to appropriate handlers
 3. **Execute** - Run agent iterations with LLM + tools
-4. **Respond** - Send responses back via channel plugins
+4. **Respond** - Send responses back via channel lambdas
 
 ```
 Message → AgentLoop → [Session] → LLM Provider → [Tools] → Response
@@ -49,7 +49,7 @@ Key fields:
 - `bus: MessageBus` - Internal message routing
 - `sessions: SessionManager` - Conversation history
 - `commands: CommandRegistry` - Slash command handling
-- `tool_definitions` - Available tools from plugins
+- `tool_definitions` - Available tools from lambdas
 
 ### MessageBus (`mochiclaw-core`)
 
@@ -59,17 +59,17 @@ Multi-producer single-consumer (mpsc) message bus for internal communication.
 
 Manages conversation history stored on disk. Each session has its own file under `sessions/`.
 
-### PluginHost (`mochiclaw-plugin`)
+### LambdaHost (`mochiclaw-lambda`)
 
-Manages WASM plugin lifecycle:
+Manages WASM lambda lifecycle:
 
 | Component | Purpose |
 |-----------|---------|
-| `CompiledPlugin` | JIT-compiled WASM module (one per plugin) |
+| `CompiledPlugin` | JIT-compiled WASM module (one per lambda) |
 | `Pool` | Pool of running instances for concurrency |
-| `HostFunctions` | Capabilities exposed to plugins |
+| `HostFunctions` | Capabilities exposed to lambdas |
 
-### Plugin Types
+### Lambda Types
 
 | Type | Interface | Example |
 |------|-----------|---------|
@@ -83,24 +83,24 @@ Manages WASM plugin lifecycle:
 ### Message Processing
 
 ```
-1. Channel Plugin (poll) → InboundMessage
+1. Channel Lambda (poll) → InboundMessage
 2. AgentLoop → SessionManager (append to history)
 3. AgentLoop → ContextBuilder (build system prompt)
-4. AgentLoop → Provider Plugin (chat request)
+4. AgentLoop → Provider Lambda (chat request)
 5. If tool_calls:
-   a. AgentLoop → Tool Plugin (execute_tool)
+   a. AgentLoop → Tool Lambda (execute_tool)
    b. Repeat 4-5 until no tool_calls
-6. AgentLoop → Channel Plugin (send_text response)
+6. AgentLoop → Channel Lambda (send_text response)
 ```
 
 ### Capability Enforcement
 
 ```
-Plugin Manifest → Extism Manifest
+Lambda Manifest → Extism Manifest
                      ↓
               Allowed Hosts
                      ↓
-              PluginHost host_http_request()
+              LambdaHost host_http_request()
                      ↓
               Check against whitelist/blacklist
                      ↓
@@ -114,6 +114,6 @@ Plugin Manifest → Extism Manifest
 | `core/src/agent.rs` | AgentLoop implementation |
 | `core/src/bus.rs` | MessageBus |
 | `core/src/session.rs` | SessionManager |
-| `plugin/src/plugin.rs` | PluginHost |
-| `plugin/src/host/mod.rs` | Host functions |
+| `lambda/src/lambda.rs` | LambdaHost |
+| `lambda/src/host/mod.rs` | Host functions |
 | `sdk/src/lib.rs` | Shared types |

@@ -8,7 +8,7 @@ use crate::http_executor::AsyncHttpExecutor;
 use crate::lambda_loop::lambda_call_typed;
 use crate::session::SessionManager;
 use mochiclaw_config::{ChannelConfig, Config, ModelConfig};
-use mochiclaw_lambda::PluginHost;
+use mochiclaw_lambda::LambdaHost;
 use mochiclaw_sdk::lambda::{
     Action, ChatInput, ExecuteToolInput, GetToolsInput, SendInput, SendOutput, SetTypingInput,
 };
@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex};
 
 pub struct AgentLoop {
     bus: Arc<MessageBus>,
-    plugin_host: Arc<PluginHost>,
+    lambda_host: Arc<LambdaHost>,
     http_executor: Arc<AsyncHttpExecutor>,
     model_config: ModelConfig,
     max_iterations: usize,
@@ -35,17 +35,17 @@ pub struct AgentLoop {
     commands: CommandRegistry,
     /// Context builder for system prompts
     context_builder: ContextBuilder,
-    /// Available tool definitions from tool plugins
+    /// Available tool definitions from tool lambdas
     tool_definitions: Arc<Mutex<Vec<Tool>>>,
-    /// Mapping from tool name to plugin name that provides it
-    tool_plugin_map: Arc<Mutex<HashMap<String, String>>>,
+    /// Mapping from tool name to lambda name that provides it
+    tool_lambda_map: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl Clone for AgentLoop {
     fn clone(&self) -> Self {
         Self {
             bus: Arc::clone(&self.bus),
-            plugin_host: Arc::clone(&self.plugin_host),
+            lambda_host: Arc::clone(&self.lambda_host),
             http_executor: Arc::clone(&self.http_executor),
             model_config: self.model_config.clone(),
             max_iterations: self.max_iterations,
@@ -55,7 +55,7 @@ impl Clone for AgentLoop {
             commands: self.commands.clone(),
             context_builder: self.context_builder.clone(),
             tool_definitions: Arc::clone(&self.tool_definitions),
-            tool_plugin_map: Arc::clone(&self.tool_plugin_map),
+            tool_lambda_map: Arc::clone(&self.tool_lambda_map),
         }
     }
 }
@@ -63,7 +63,7 @@ impl Clone for AgentLoop {
 impl AgentLoop {
     pub fn new(
         bus: Arc<MessageBus>,
-        plugin_host: Arc<PluginHost>,
+        lambda_host: Arc<LambdaHost>,
         config: &Config,
         workspace: PathBuf,
     ) -> Self {
@@ -109,8 +109,8 @@ impl AgentLoop {
 
         Self {
             bus,
-            plugin_host: Arc::clone(&plugin_host),
-            http_executor: Arc::new(AsyncHttpExecutor::new(Arc::clone(&plugin_host))),
+            lambda_host: Arc::clone(&lambda_host),
+            http_executor: Arc::new(AsyncHttpExecutor::new(Arc::clone(&lambda_host))),
             model_config,
             max_iterations: config.agent.max_iterations,
             channel_configs,
@@ -119,62 +119,62 @@ impl AgentLoop {
             commands: CommandRegistry::new(),
             context_builder: ContextBuilder::new(workspace),
             tool_definitions: Arc::new(Mutex::new(Vec::new())),
-            tool_plugin_map: Arc::new(Mutex::new(HashMap::new())),
+            tool_lambda_map: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
-    /// Discover and load tool definitions from all loaded tool plugins.
-    /// Tool plugins are identified by having features.tool = true in their manifest.
-    async fn load_tool_plugins(&self) {
-        let tool_plugin_names = self.plugin_host.tool_plugins();
+    /// Discover and load tool definitions from all loaded tool lambdas.
+    /// Tool lambdas are identified by having features.tool = true in their manifest.
+    async fn load_tool_lambdas(&self) {
+        let tool_lambda_names = self.lambda_host.tool_lambdas();
 
         let mut tool_definitions = Vec::new();
-        let mut tool_plugin_map: HashMap<String, String> = HashMap::new();
-        let mut loaded_plugin_count = 0;
+        let mut tool_lambda_map: HashMap<String, String> = HashMap::new();
+        let mut loaded_lambda_count = 0;
 
-        for plugin_name in tool_plugin_names {
+        for lambda_name in tool_lambda_names {
             // Use lambda_call_typed to call GetTools action
             let tools_result: Result<String, Error> = lambda_call_typed(
-                &self.plugin_host,
+                &self.lambda_host,
                 Arc::clone(&self.http_executor),
-                &plugin_name,
+                &lambda_name,
                 Action::GetTools,
                 &GetToolsInput {},
                 &[],
             )
             .await
-            .map_err(|e| Error::Plugin(e.to_string()));
+            .map_err(|e| Error::Lambda(e.to_string()));
 
             match tools_result {
                 Ok(tools_json) => {
                     // Parse the tools JSON
                     match serde_json::from_str::<Vec<Tool>>(&tools_json) {
                         Ok(tools) => {
-                            loaded_plugin_count += 1;
+                            loaded_lambda_count += 1;
                             tracing::info!(
-                                "loaded {} tools from plugin '{}'",
+                                "loaded {} tools from lambda '{}'",
                                 tools.len(),
-                                plugin_name
+                                lambda_name
                             );
                             for tool in tools {
-                                tool_plugin_map.insert(tool.name.clone(), plugin_name.clone());
+                                tool_lambda_map.insert(tool.name.clone(), lambda_name.clone());
                                 tool_definitions.push(tool);
                             }
                         }
                         Err(e) => {
                             tracing::warn!(
-                                "failed to parse tools from plugin '{}': {}",
-                                plugin_name,
+                                "failed to parse tools from lambda '{}': {}",
+                                lambda_name,
                                 e
                             );
                         }
                     }
                 }
                 Err(e) => {
-                    // Tool plugin but GetTools failed - this is a real error
+                    // Tool lambda but GetTools failed - this is a real error
                     tracing::warn!(
-                        "tool plugin '{}' failed to provide tools (GetTools failed): {}",
-                        plugin_name,
+                        "tool lambda '{}' failed to provide tools (GetTools failed): {}",
+                        lambda_name,
                         e
                     );
                 }
@@ -183,15 +183,15 @@ impl AgentLoop {
 
         // Update the agent state with discovered tools
         *self.tool_definitions.lock().unwrap() = tool_definitions;
-        *self.tool_plugin_map.lock().unwrap() = tool_plugin_map;
+        *self.tool_lambda_map.lock().unwrap() = tool_lambda_map;
 
         if self.tool_definitions.lock().unwrap().is_empty() {
-            tracing::info!("no tool plugins loaded");
+            tracing::info!("no tool lambdas loaded");
         } else {
             tracing::info!(
-                "total tool definitions: {}, from {} tool plugin(s)",
+                "total tool definitions: {}, from {} tool lambda(s)",
                 self.tool_definitions.lock().unwrap().len(),
-                loaded_plugin_count
+                loaded_lambda_count
             );
         }
     }
@@ -199,8 +199,8 @@ impl AgentLoop {
     pub async fn run(&self) -> Result<(), Error> {
         tracing::info!("AgentLoop started");
 
-        // Initialize tool plugins
-        self.load_tool_plugins().await;
+        // Initialize tool lambdas
+        self.load_tool_lambdas().await;
 
         // Spawn independent polling task for each channel
         let mut poller_handles: Vec<tokio::task::JoinHandle<()>> = Vec::new();
@@ -217,7 +217,7 @@ impl AgentLoop {
                 channel_name.clone(),
                 config.clone(),
                 Arc::clone(&self.bus),
-                Arc::clone(&self.plugin_host),
+                Arc::clone(&self.lambda_host),
                 Arc::clone(&self.http_executor),
                 Arc::clone(&self.poll_state),
             );
@@ -353,7 +353,7 @@ impl AgentLoop {
                 typing: true,
             };
             let _: Option<mochiclaw_sdk::lambda::SendOutput> = lambda_call_typed(
-                &self.plugin_host,
+                &self.lambda_host,
                 Arc::clone(&self.http_executor),
                 &msg.channel,
                 Action::SetTyping,
@@ -394,7 +394,7 @@ impl AgentLoop {
             };
 
             let response: ChatResponse = lambda_call_typed(
-                &self.plugin_host,
+                &self.lambda_host,
                 Arc::clone(&self.http_executor),
                 &self.model_config.provider,
                 Action::Chat,
@@ -402,10 +402,10 @@ impl AgentLoop {
                 &[],
             )
             .await
-            .map_err(|e| Error::Plugin(format!("provider call failed: {}", e)))?;
+            .map_err(|e| Error::Lambda(format!("provider call failed: {}", e)))?;
 
             if let Some(err) = response.error {
-                return Err(Error::Plugin(format!("provider error: {}", err)));
+                return Err(Error::Lambda(format!("provider error: {}", err)));
             }
 
             // Check if there are tool calls to execute
@@ -449,11 +449,11 @@ impl AgentLoop {
             for tool_call in &response.tool_calls {
                 let tool_name = &tool_call.name;
 
-                // Find which plugin provides this tool
-                let plugin_name = match self.tool_plugin_map.lock().unwrap().get(tool_name) {
+                // Find which lambda provides this tool
+                let lambda_name = match self.tool_lambda_map.lock().unwrap().get(tool_name) {
                     Some(name) => name.clone(),
                     None => {
-                        tracing::warn!("no plugin found for tool '{}'", tool_name);
+                        tracing::warn!("no lambda found for tool '{}'", tool_name);
                         // Add error result message
                         chat_messages.push(Message {
                             role: MessageRole::User,  // Tool results use "user" role in OpenAI format
@@ -468,9 +468,9 @@ impl AgentLoop {
 
                 // Execute the tool via lambda_call_typed
                 tracing::debug!(
-                    "executing tool '{}' via plugin '{}'",
+                    "executing tool '{}' via lambda '{}'",
                     tool_name,
-                    plugin_name
+                    lambda_name
                 );
 
                 let tool_input = ExecuteToolInput {
@@ -479,15 +479,15 @@ impl AgentLoop {
                 };
 
                 let tool_response: ToolExecutionResponse = lambda_call_typed(
-                    &self.plugin_host,
+                    &self.lambda_host,
                     Arc::clone(&self.http_executor),
-                    &plugin_name,
+                    &lambda_name,
                     Action::ExecuteTool,
                     &tool_input,
                     &[],
                 )
                 .await
-                .map_err(|e| Error::Plugin(format!("tool call failed: {}", e)))?;
+                .map_err(|e| Error::Lambda(format!("tool call failed: {}", e)))?;
 
                 // Format tool result as a message
                 let tool_result_content = if let Some(error) = tool_response.error {
@@ -581,7 +581,7 @@ impl AgentLoop {
 
         // Use unified lambda_loop to handle all effects
         let _: SendOutput = lambda_call_typed(
-            &self.plugin_host,
+            &self.lambda_host,
             Arc::clone(&self.http_executor),
             channel_name,
             Action::FormatSend,
@@ -589,7 +589,7 @@ impl AgentLoop {
             &[], // empty initial state for send
         )
         .await
-        .map_err(|e| Error::Plugin(format!("format_send failed: {}", e)))?;
+        .map_err(|e| Error::Lambda(format!("format_send failed: {}", e)))?;
 
         tracing::info!("message sent successfully to {}", chat_id);
         Ok(())

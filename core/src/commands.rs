@@ -2,7 +2,7 @@
 //!
 //! Two registration mechanisms:
 //! - Built-in commands: registered via `register_builtin` in `CommandRegistry`
-//! - Plugin commands: called via `PluginHost::call` in AgentLoop (WASM-based)
+//! - Lambda commands: called via `LambdaHost::call` in AgentLoop (WASM-based)
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -95,7 +95,7 @@ impl CommandRegistry {
         lines.push(format!("/{} - {}", "help", "Show available commands"));
         lines.push(format!("/{} - {}", "clear", "Clear conversation history"));
 
-        // Registered commands from plugins
+        // Registered commands from lambdas
         for (name, desc) in self.list_commands() {
             if name != "help" && name != "clear" {
                 lines.push(format!("/{} - {}", name, desc));

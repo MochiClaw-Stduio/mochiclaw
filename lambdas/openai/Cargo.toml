@@ -2,7 +2,7 @@
 name = "mochi-openai"
 version.workspace = true
 edition.workspace = true
-description = "OpenAI-compatible provider plugin for Mochiclaw"
+description = "OpenAI-compatible provider lambda for Mochiclaw"
 
 [lib]
 crate-type = ["cdylib"]

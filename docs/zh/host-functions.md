@@ -180,13 +180,13 @@ let raw = kv_get_raw("binary")?;
 
 ### 跨插件 KV 访问
 
-如果插件在能力声明中有 `allowed_kv_read = ["plugin-a", "plugin-b"]`：
+如果插件在能力声明中有 `allowed_kv_read = ["lambda-a", "lambda-b"]`：
 
 ```rust
 use mochiclaw_sdk::host::kv::kv_get_from;
 
 // 从另一个插件的 KV 读取
-let value: SomeType = kv_get_from("plugin-a", "shared_key")?;
+let value: SomeType = kv_get_from("lambda-a", "shared_key")?;
 ```
 
 ## 随机数

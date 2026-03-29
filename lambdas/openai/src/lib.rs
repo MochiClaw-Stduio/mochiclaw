@@ -1,6 +1,6 @@
-//! OpenAI Compatible Provider Plugin
+//! OpenAI Compatible Provider Lambda
 //!
-//! This plugin implements an LLM provider using the OpenAI Chat Completions API.
+//! This lambda implements an LLM provider using the OpenAI Chat Completions API.
 //! Uses the lambda_function architecture: returns HTTP effects for host to execute.
 
 use std::collections::HashMap;
@@ -76,7 +76,7 @@ pub fn lambda_function(params: LambdaInput) -> FnResult<LambdaOutput> {
             result: rmp_serde::to_vec(&ChatResponse {
                 content: String::new(),
                 tool_calls: Vec::new(),
-                error: Some("provider plugin does not support this action".to_string()),
+                error: Some("provider lambda does not support this action".to_string()),
             })
             .unwrap_or_default(),
             new_state: Vec::new(),

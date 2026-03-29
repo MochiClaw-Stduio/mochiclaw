@@ -6,11 +6,11 @@
 
 ## Overview
 
-Host functions are capabilities exposed to WASM plugins by the runtime. Plugins access them through the `mochiclaw_sdk::host::*` module.
+Host functions are capabilities exposed to WASM lambdas by the runtime. Lambdas access them through the `mochiclaw_sdk::host::*` module.
 
 ## HTTP
 
-Plugins can make HTTP requests to allowed hosts.
+Lambdas can make HTTP requests to allowed hosts.
 
 ```rust
 use mochiclaw_sdk::host::http::{HttpClient, HttpError};
@@ -145,7 +145,7 @@ fn fs_list(
 
 ## KV Storage
 
-Plugin-private key-value store with optional cross-plugin read access.
+Lambda-private key-value store with optional cross-lambda read access.
 
 ```rust
 use mochiclaw_sdk::host::kv::{kv_get, kv_set, kv_remove, kv_get_raw};
@@ -175,18 +175,18 @@ let raw = kv_get_raw("binary")?;
 | `kv_set_raw(key, bytes)` | Store raw bytes |
 | `kv_get_raw(key)` | Get raw bytes |
 | `kv_remove(key)` | Delete key |
-| `kv_list_readable()` | List plugins readable by this plugin |
-| `kv_list_writable()` | List plugins writable by this plugin |
+| `kv_list_readable()` | List lambdas readable by this lambda |
+| `kv_list_writable()` | List lambdas writable by this lambda |
 
-### Cross-Plugin KV Access
+### Cross-Lambda KV Access
 
-If a plugin has `allowed_kv_read = ["plugin-a", "plugin-b"]` in its capabilities:
+If a lambda has `allowed_kv_read = ["lambda-a", "lambda-b"]` in its capabilities:
 
 ```rust
 use mochiclaw_sdk::host::kv::kv_get_from;
 
-// Read from another plugin's KV
-let value: SomeType = kv_get_from("plugin-a", "shared_key")?;
+// Read from another lambda's KV
+let value: SomeType = kv_get_from("lambda-a", "shared_key")?;
 ```
 
 ## Random

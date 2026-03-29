@@ -4,20 +4,20 @@
 //! 执行时会应用插件的权限配置（allowed_hosts、denied_hosts）和代理设置
 
 use crate::error::Error;
-use mochiclaw_lambda::PluginHost;
+use mochiclaw_lambda::LambdaHost;
 use mochiclaw_sdk::lambda::{Effect, EffectResult, HttpEffect};
 use std::sync::Arc;
 
 /// 异步 HTTP 执行器
 #[derive(Clone)]
 pub struct AsyncHttpExecutor {
-    plugin_host: Arc<PluginHost>,
+    lambda_host: Arc<LambdaHost>,
 }
 
 impl AsyncHttpExecutor {
     /// 创建新的 HTTP 执行器
-    pub fn new(plugin_host: Arc<PluginHost>) -> Self {
-        Self { plugin_host }
+    pub fn new(lambda_host: Arc<LambdaHost>) -> Self {
+        Self { lambda_host }
     }
 
     /// Build a reqwest client with optional proxy
@@ -45,26 +45,26 @@ impl AsyncHttpExecutor {
     }
 
     /// 执行一个 HTTP Effect，返回响应体字符串
-    pub async fn execute(&self, plugin_name: &str, effect: HttpEffect) -> Result<String, Error> {
-        // Get plugin context for permissions and proxy
+    pub async fn execute(&self, lambda_name: &str, effect: HttpEffect) -> Result<String, Error> {
+        // Get lambda context for permissions and proxy
         let ctx = self
-            .plugin_host
-            .plugin_context(plugin_name)
-            .ok_or_else(|| Error::Plugin(format!("plugin '{}' not found", plugin_name)))?;
+            .lambda_host
+            .lambda_context(lambda_name)
+            .ok_or_else(|| Error::Lambda(format!("lambda '{}' not found", lambda_name)))?;
 
         // Check if network is enabled
         if !ctx.network_enabled() {
             return Err(Error::Http(format!(
-                "network access is disabled for plugin '{}'",
-                plugin_name
+                "network access is disabled for lambda '{}'",
+                lambda_name
             )));
         }
 
         // Check host permissions
         if !ctx.is_host_allowed(&effect.url) {
             return Err(Error::Http(format!(
-                "host not allowed for plugin '{}': {}",
-                plugin_name, effect.url
+                "host not allowed for lambda '{}': {}",
+                lambda_name, effect.url
             )));
         }
 
@@ -108,25 +108,25 @@ impl AsyncHttpExecutor {
     /// 执行一个 Effect 枚举（如果是否 HTTP 类型则返回错误）
     pub async fn execute_effect(
         &self,
-        plugin_name: &str,
+        lambda_name: &str,
         effect: &Effect,
     ) -> Result<String, Error> {
         match effect {
             Effect::HttpRequest(http_effect) => {
-                self.execute(plugin_name, http_effect.clone()).await
+                self.execute(lambda_name, http_effect.clone()).await
             }
         }
     }
 
     /// 并行执行多个 Effect，返回每个 Effect 的执行结果
-    pub async fn execute_all(&self, plugin_name: &str, effects: Vec<Effect>) -> Vec<EffectResult> {
+    pub async fn execute_all(&self, lambda_name: &str, effects: Vec<Effect>) -> Vec<EffectResult> {
         // 并行执行所有 effects
         let futures: Vec<_> = effects
             .into_iter()
             .map(|effect| async {
                 match effect {
                     Effect::HttpRequest(http_effect) => {
-                        match self.execute(plugin_name, http_effect).await {
+                        match self.execute(lambda_name, http_effect).await {
                             Ok(response) => EffectResult {
                                 success: true,
                                 response: Some(response),

@@ -1,35 +1,35 @@
-//! Plugin manifest schema
+//! Lambda manifest schema
 
-use crate::error::Error as PluginError;
+use crate::error::Error as LambdaError;
 use mochiclaw_config::LambdaCapabilitiesOverride;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
 
-/// Plugin manifest - declares plugin metadata and capabilities
+/// Lambda manifest - declares lambda metadata and capabilities
 #[derive(Debug, Clone, Deserialize)]
-pub struct PluginManifest {
-    /// Plugin name (e.g., "mochiclaw-weixin")
+pub struct LambdaManifest {
+    /// Lambda name (e.g., "mochiclaw-weixin")
     pub name: String,
-    /// Plugin version
+    /// Lambda version
     pub version: String,
     /// Human-readable description
     pub description: Option<String>,
-    /// Plugin runtime capabilities and permissions
+    /// Lambda runtime capabilities and permissions
     #[serde(default)]
     pub capabilities: Capabilities,
-    /// Plugin features provided by this plugin
+    /// Lambda features provided by this lambda
     #[serde(default)]
     pub features: Features,
-    /// Plugin-specific settings schema
+    /// Lambda-specific settings schema
     #[serde(default)]
-    pub settings: PluginSettingsSpec,
+    pub settings: LambdaSettingsSpec,
 }
 
-/// Schema for plugin-specific settings declared in manifest
+/// Schema for lambda-specific settings declared in manifest
 #[derive(Debug, Clone, Default, Deserialize)]
-pub struct PluginSettingsSpec {
-    /// Human-readable description of what settings this plugin expects
+pub struct LambdaSettingsSpec {
+    /// Human-readable description of what settings this lambda expects
     #[serde(default)]
     pub description: Option<String>,
     /// Example settings for documentation/validation
@@ -45,9 +45,9 @@ pub struct Capabilities {
     /// Filesystem access capabilities
     #[serde(default)]
     pub fs: FsCapabilities,
-    /// Allowed KV read access to other plugins' key-value stores
-    /// Format: list of plugin names this plugin can read KV from
-    /// Write access is always limited to own plugin KV only
+    /// Allowed KV read access to other lambdas' key-value stores
+    /// Format: list of lambda names this lambda can read KV from
+    /// Write access is always limited to own lambda KV only
     #[serde(default)]
     pub allowed_kv_read: Vec<String>,
 }
@@ -147,10 +147,10 @@ pub struct NetworkCapabilities {
     /// Whether network access is enabled
     #[serde(default = "default_false")]
     pub enabled: bool,
-    /// Allowed HTTP hosts for this plugin (glob patterns supported)
+    /// Allowed HTTP hosts for this lambda (glob patterns supported)
     #[serde(default)]
     pub allowed_hosts: Vec<String>,
-    /// Denied HTTP hosts for this plugin (takes precedence over allowed_hosts, glob patterns supported)
+    /// Denied HTTP hosts for this lambda (takes precedence over allowed_hosts, glob patterns supported)
     #[serde(default)]
     pub denied_hosts: Vec<String>,
 }
@@ -186,29 +186,29 @@ pub struct FsCapabilities {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Features {
-    /// Whether this plugin provides LLM provider capability
+    /// Whether this lambda provides LLM provider capability
     #[serde(default)]
     pub provider: bool,
-    /// Whether this plugin provides channel capability
+    /// Whether this lambda provides channel capability
     #[serde(default)]
     pub channel: bool,
-    /// Whether this plugin provides command capability
+    /// Whether this lambda provides command capability
     #[serde(default)]
     pub command: bool,
-    /// Whether this plugin provides tool capability
+    /// Whether this lambda provides tool capability
     #[serde(default)]
     pub tool: bool,
 }
 
-impl PluginManifest {
+impl LambdaManifest {
     /// Load manifest from a TOML file
-    pub fn from_file(path: &Path) -> Result<Self, PluginError> {
+    pub fn from_file(path: &Path) -> Result<Self, LambdaError> {
         let content = std::fs::read_to_string(path).map_err(|e| {
-            PluginError::Manifest(format!("failed to read {}: {}", path.display(), e))
+            LambdaError::Manifest(format!("failed to read {}: {}", path.display(), e))
         })?;
 
         toml::from_str(&content).map_err(|e| {
-            PluginError::Manifest(format!("failed to parse {}: {}", path.display(), e))
+            LambdaError::Manifest(format!("failed to parse {}: {}", path.display(), e))
         })
     }
 }
@@ -252,7 +252,7 @@ mod tests {
                 read_blacklist: vec![],
                 write_blacklist: vec![],
             },
-            allowed_kv_read: vec!["plugin-a".to_string()],
+            allowed_kv_read: vec!["lambda-a".to_string()],
         }
     }
 
@@ -534,14 +534,14 @@ mod tests {
         let overrides = LambdaCapabilitiesOverride {
             network: None,
             fs: None,
-            allowed_kv_read: Some(vec!["plugin-b".to_string(), "plugin-c".to_string()]),
+            allowed_kv_read: Some(vec!["lambda-b".to_string(), "lambda-c".to_string()]),
         };
 
         let result = manifest.merge_with(&overrides);
 
         assert_eq!(
             result.allowed_kv_read,
-            vec!["plugin-a", "plugin-b", "plugin-c"]
+            vec!["lambda-a", "lambda-b", "lambda-c"]
         );
     }
 
@@ -557,7 +557,7 @@ mod tests {
 
         let result = manifest.merge_with(&overrides);
 
-        assert_eq!(result.allowed_kv_read, vec!["plugin-a"]);
+        assert_eq!(result.allowed_kv_read, vec!["lambda-a"]);
     }
 
     // ==================== Combined/edge case tests ====================
@@ -580,7 +580,7 @@ mod tests {
                 read_blacklist: Some(vec!["/new/blacklist".to_string()]),
                 write_blacklist: Some(vec!["/new/write-blacklist".to_string()]),
             }),
-            allowed_kv_read: Some(vec!["new-plugin".to_string()]),
+            allowed_kv_read: Some(vec!["new-lambda".to_string()]),
         };
 
         let result = manifest.merge_with(&overrides);
@@ -611,7 +611,7 @@ mod tests {
         assert_eq!(result.fs.write_blacklist, vec!["/new/write-blacklist"]);
 
         // KV
-        assert_eq!(result.allowed_kv_read, vec!["plugin-a", "new-plugin"]);
+        assert_eq!(result.allowed_kv_read, vec!["lambda-a", "new-lambda"]);
     }
 
     #[test]

@@ -19,7 +19,7 @@ max_iterations = 40
 workspace = "./workspace"
 
 [runtime]
-plugin_dirs = ["./target/plugins"]
+lambda_dirs = ["./target/lambdas"]
 
 [runtime.log]
 level = "info"
@@ -29,7 +29,7 @@ max_age_days = 30
 [runtime.network]
 use_system_proxy = false
 
-[plugins.mochi-openai]
+[lambdas.mochi-openai]
 proxy_url = "http://127.0.0.1:7890"
 
 [channels.mochi-weixin]
@@ -62,7 +62,7 @@ api_key = "sk-..."
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `plugin_dirs` | array | `[]` | Directories to search for plugins |
+| `lambda_dirs` | array | `[]` | Directories to search for lambdas |
 
 ### `[runtime.log]`
 
@@ -78,18 +78,18 @@ api_key = "sk-..."
 |-------|------|---------|-------------|
 | `use_system_proxy` | bool | `false` | Use system HTTP proxy |
 
-## `[plugins]`
+## `[lambdas]`
 
-Per-plugin configuration. Key is the plugin name.
+Per-lambda configuration. Key is the lambda name.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `enabled` | bool | `true` | Enable/disable plugin |
-| `proxy_url` | string | - | Per-plugin HTTP proxy override |
+| `enabled` | bool | `true` | Enable/disable lambda |
+| `proxy_url` | string | - | Per-lambda HTTP proxy override |
 
-### `[plugins.PLUGIN.capabilities]`
+### `[lambdas.LAMBDA.capabilities]`
 
-Override plugin capabilities (merged with manifest).
+Override lambda capabilities (merged with manifest).
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -106,7 +106,7 @@ Override plugin capabilities (merged with manifest).
 
 ## `[channels]`
 
-Channel plugin configuration.
+Channel lambda configuration.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -121,7 +121,7 @@ Model configurations. Key is the model name.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `model` | string | Yes | Model identifier for provider |
-| `provider` | string | Yes | Provider plugin name |
+| `provider` | string | Yes | Provider lambda name |
 | `api_base` | string | No | API base URL override |
 | `api_key` | string | No | API key (or use env var) |
 

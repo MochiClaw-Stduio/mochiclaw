@@ -1,6 +1,6 @@
-//! Weixin Channel Plugin
+//! Weixin Channel Lambda
 //!
-//! This plugin handles:
+//! This lambda handles:
 //! - QR code login for WeChat
 //! - HTTP long-polling to receive messages
 //! - Sending text and media messages
@@ -18,5 +18,5 @@ mod types;
 pub use constants::*;
 pub use types::WeixinConfig;
 
-// Re-export plugin functions
+// Re-export lambda functions
 pub use api::lambda_function;
