@@ -8,6 +8,8 @@
 
 Mochiclaw's lambda system is built on **Extism**, allowing lambdas to run as **WASM (WASM32-unknown-unknown)** in an isolated sandbox environment. Each lambda is completely isolated and can only interact with the outside world through explicitly declared capabilities.
 
+**Key architectural change**: HTTP execution has moved from inside lambdas to the host layer via an **Effect system**. Lambdas return `HttpEffect` declarations, and the host's `AsyncHttpExecutor` handles actual HTTP execution with permission enforcement.
+
 ## Core Concepts
 
 ### 1. Lambda Types (Features)
@@ -104,10 +106,19 @@ tool = true
 │                                                           │
 │  ┌────────────────────────────────────────────────────┐   │
 │  │              Host Functions                        │   │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐   │   │
-│  │  │   HTTP  │ │   FS    │ │   KV    │ │  Rand   │   │   │
-│  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘   │   │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐               │   │
+│  │  │   FS    │ │   KV    │ │  Rand   │               │   │
+│  │  └─────────┘ └─────────┘ └─────────┘               │   │
 │  └────────────────────────────────────────────────────┘   │
+└───────────────────────────────────────────────────────────┘
+                          │
+                          │ lambda_call() returns effects
+                          ▼
+┌───────────────────────────────────────────────────────────┐
+│              AsyncHttpExecutor (host layer)               │
+│  - Executes HttpEffect with permission checking           │
+│  - Proxy support                                          │
+│  - Parallel execution via futures::join_all               │
 └───────────────────────────────────────────────────────────┘
 ```
 
@@ -115,9 +126,9 @@ tool = true
 
 `LambdaHost` is the lambda runtime manager:
 
-- **CompiledPlugin Pool**: Each lambda has one JIT-compiled `CompiledPlugin`
-- **Pool**: Each lambda has one `Pool` managing multiple `Lambda` instances for concurrency
-- **Host Functions**: Capabilities exposed to lambdas (HTTP, FS, KV, Rand)
+- **CompiledPlugin Pool**: Each lambda has one JIT-compiled `CompiledPlugin` (shared across pool instances)
+- **Pool**: Each lambda has one `Pool` managing multiple `Plugin` instances for concurrency
+- **Host Functions**: Capabilities exposed to lambdas (FS, KV, Rand)
 
 ### Concurrency Model
 
@@ -127,7 +138,7 @@ Lambdas achieve concurrency through **Pool**:
 let pool = PoolBuilder::new()
     .with_max_instances(std::thread::available_parallelism().unwrap().into())
     .build(move || {
-        Lambda::new_from_compiled(&compiled)
+        Plugin::new_from_compiled(&compiled)
     });
 ```
 
@@ -138,34 +149,65 @@ let mut lambda = pool.get(timeout)?;
 lambda.call("function_name", &input)?
 ```
 
-## Host Functions
+## Effect System (HTTP Execution)
 
-### HTTP
+Instead of making HTTP requests directly, lambdas return `HttpEffect` declarations. The host's `AsyncHttpExecutor` handles execution:
+
+### HttpEffect Structure
 
 ```rust
-// sdk/src/host/http.rs
-pub struct HttpClient {
-    pub method: String,
-    pub url: String,
-    pub headers: HashMap<String, String>,
-    pub body: Option<Vec<u8>>,
-}
-
-pub struct HttpResponse {
-    pub status: u32,
-    pub headers: HashMap<String, String>,
-    pub body: Vec<u8>,
+struct HttpEffect {
+    method: String,                    // GET, POST, PUT, DELETE, etc.
+    url: String,                       // Full URL
+    headers: HashMap<String, String>, // Request headers
+    body: Option<String>,              // Request body
+    timeout_ms: u32,                   // Timeout in milliseconds
 }
 ```
+
+### Effect Flow
+
+```
+Lambda                              Host                            External
+  │                                   │                                │
+  │ lambda_function(LambdaInput)      │                                │
+  │◄──────────────────────────────────│                                │
+  │                                   │                                │
+  │ LambdaOutput {                    │                                │
+  │   effects: [HttpEffect {...}],    │                                │
+  │   result: Vec::new()              │                                │
+  │ }                                 │                                │
+  │──────────────────────────────────►│                                │
+  │                         AsyncHttpExecutor                          │
+  │                         .execute_all()                             │
+  │                                   │                                │
+  │                         HTTP Request ────────────────────────────► │
+  │                                   │                                │
+  │ EffectResult { success, response }│                                │
+  │◄──────────────────────────────────│                                │
+  │                                   │                                │
+  │ lambda_function(LambdaInput {     │                                │
+  │   effect_results: [result]        │                                │
+  │ })                                │                                │
+  │◄──────────────────────────────────│                                │
+  │                                   │                                │
+  │ LambdaOutput {                    │                                │
+  │   effects: [],                    │                                │
+  │   result: ChatResponse {...}      │                                │
+  │ }                                 │                                │
+  │──────────────────────────────────►│ (return to caller)             │
+```
+
+## Host Functions
 
 ### Filesystem
 
 ```rust
 // sdk/src/host/fs.rs
-fn fs_read(path: &str) -> Result<String, KvError>
-fn fs_write(path: &str, content: &str) -> Result<(), KvError>
-fn fs_edit(path: &str, old: &str, new: &str) -> Result<(), KvError>
-fn fs_list(path: &str) -> Result<Vec<String>, KvError>
+fn fs_read(path: &str, workspace: &str, offset: u64, limit: u64) -> Result<String, String>
+fn fs_write(path: &str, workspace: &str, content: &str) -> Result<bool, String>
+fn fs_edit(path: &str, workspace: &str, old: &str, new: &str, replace_all: bool) -> Result<String, String>
+fn fs_list(path: &str, workspace: &str, recursive: bool, max_entries: u64) -> Result<String, String>
 ```
 
 ### KV Storage
@@ -217,25 +259,25 @@ allowed_root = "${workspace}"
 tool = true
 ```
 
-### 3. Implement Lambda Logic
+### 3. Implement Lambda with Unified Entry Point
+
+All lambdas use `lambda_function` with `Action` dispatch:
 
 ```rust
-use mochiclaw_sdk::*;
+use mochiclaw_sdk::lambda::{Action, LambdaInput, LambdaOutput};
+use mochiclaw_sdk::{FnResult, plugin_fn};
 
 #[plugin_fn]
-pub fn execute_tool(input: ToolExecutionRequest) -> FnResult<ToolExecutionResponse> {
-    let name = input.name;
-    let args = input.arguments;
-
-    let result = match name.as_str() {
-        "my_tool" => do_something(args),
-        _ => return Err(制.into()),
-    };
-
-    Ok(ToolExecutionResponse {
-        result,
-        error: None,
-    })
+pub fn lambda_function(params: LambdaInput) -> FnResult<LambdaOutput> {
+    match params.action {
+        Action::GetTools => handle_get_tools(),
+        Action::ExecuteTool => handle_execute_tool(params),
+        _ => Ok(LambdaOutput {
+            effects: vec![],
+            result: vec![],
+            new_state: Vec::new(),
+        }),
+    }
 }
 ```
 
@@ -272,5 +314,6 @@ Override rules:
 
 1. **Sandbox Isolation**: WASM lambdas run in an independent virtual machine
 2. **Capability Declaration**: Lambdas must declare required capabilities
-3. **Access Control**: Network hosts and filesystem paths both support blacklists
-4. **KV Isolation**: By default, can only access own KV storage
+3. **Effect-based HTTP**: Network requests are declared as effects, executed by host with permission checks
+4. **Access Control**: Network hosts and filesystem paths both support blacklists
+5. **KV Isolation**: By default, can only access own KV storage

@@ -6,75 +6,9 @@ English | [简体中文](../zh/host-functions.md)
 
 ## 概述
 
-Host functions 是运行时暴露给 WASM 插件的能力。插件通过 `mochiclaw_sdk::host::*` 模块访问。
+Host functions 是运行时暴露给 WASM lambda 的能力。Lambda 通过 `mochiclaw_sdk::host::*` 模块访问。
 
-## HTTP
-
-插件可以向允许的主机发送 HTTP 请求。
-
-```rust
-use mochiclaw_sdk::host::http::{HttpClient, HttpError};
-
-// GET 请求
-let response = HttpClient::get("https://api.example.com/data")
-    .header("Authorization", "Bearer token")
-    .send()?;
-
-// POST 请求（JSON body）
-let response = HttpClient::post("https://api.example.com/data")
-    .json(&payload)?
-    .send()?;
-```
-
-### HttpClient 方法
-
-| 方法 | 描述 |
-|------|------|
-| `HttpClient::new()` | 创建新客户端（默认 GET） |
-| `HttpClient::get(url)` | 开始 GET 请求 |
-| `HttpClient::post(url)` | 开始 POST 请求 |
-| `HttpClient::put(url)` | 开始 PUT 请求 |
-| `HttpClient::delete(url)` | 开始 DELETE 请求 |
-| `HttpClient::patch(url)` | 开始 PATCH 请求 |
-| `HttpClient::head(url)` | 开始 HEAD 请求 |
-| `.url(url)` | 设置 URL |
-| `.method(verb)` | 设置 HTTP 方法 |
-| `.header(key, value)` | 添加 header |
-| `.json(value)` | 设置 JSON body（自动设置 Content-Type） |
-| `.body(bytes)` | 设置原始 body |
-| `.send()` | 发送请求 |
-
-### HttpResponse 方法
-
-```rust
-let response = HttpClient::get("https://api.example.com").send()?;
-
-// 解析为文本
-let text = response.text()?;
-
-// 解析为 JSON
-let data: MyType = response.json()?;
-
-// 原始字节
-let bytes = response.bytes();
-```
-
-| 方法 | 返回值 |
-|------|--------|
-| `text()` | `Result<&str>` |
-| `json<T>()` | `Result<T>` (JSON 反序列化) |
-| `bytes()` | `&[u8]` |
-
-### HttpError 变体
-
-```rust
-pub enum HttpError {
-    Request(String),      // 请求失败
-    StatusCode(u16),      // HTTP 错误状态码
-    InvalidUtf8,          // 响应不是 UTF-8
-    Json(serde_json::Error), // JSON 解析错误
-}
-```
+**注意**：HTTP 不再是 host function。Lambda 在返回值中声明 `HttpEffect`，主机的 `AsyncHttpExecutor` 处理执行并进行权限检查。详见 [Effect 系统](../zh/lambda-system.md#effect-系统http-执行)。
 
 ## 文件系统
 
@@ -104,7 +38,7 @@ let listing = fs_list(".", workspace, false, 100)?;
 ```rust
 fn fs_read(
     path: &str,        // 文件路径
-    workspace: &str,    // 用于解析相对路径的工作目录
+    workspace: &str,   // 用于解析相对路径的工作目录
     offset: u64,       // 行偏移（从 1 开始，0 = 从头）
     limit: u64,        // 最大行数（0 = 无限制）
 ) -> Result<String, String>
@@ -145,7 +79,7 @@ fn fs_list(
 
 ## KV 存储
 
-插件私有的键值存储，支持可选的跨插件读取访问。
+Lambda 私有的键值存储，支持可选的跨 lambda 读取访问。
 
 ```rust
 use mochiclaw_sdk::host::kv::{kv_get, kv_set, kv_remove, kv_get_raw};
@@ -175,17 +109,17 @@ let raw = kv_get_raw("binary")?;
 | `kv_set_raw(key, bytes)` | 存储原始字节 |
 | `kv_get_raw(key)` | 获取原始字节 |
 | `kv_remove(key)` | 删除键 |
-| `kv_list_readable()` | 列出此插件可读取的插件 |
-| `kv_list_writable()` | 列出此插件可写入的插件 |
+| `kv_list_readable()` | 列出此 lambda 可读取的 lambda |
+| `kv_list_writable()` | 列出此 lambda 可写入的 lambda |
 
-### 跨插件 KV 访问
+### 跨 lambda KV 访问
 
-如果插件在能力声明中有 `allowed_kv_read = ["lambda-a", "lambda-b"]`：
+如果 lambda 在能力声明中有 `allowed_kv_read = ["lambda-a", "lambda-b"]`：
 
 ```rust
 use mochiclaw_sdk::host::kv::kv_get_from;
 
-// 从另一个插件的 KV 读取
+// 从另一个 lambda 的 KV 读取
 let value: SomeType = kv_get_from("lambda-a", "shared_key")?;
 ```
 

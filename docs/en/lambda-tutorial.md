@@ -61,32 +61,61 @@ write_whitelist = ["${workspace}"]
 tool = true
 ```
 
-## Step 4: Implement Lambda
+## Step 4: Implement Lambda with Unified Entry Point
+
+All lambdas use a unified `lambda_function` entry point with `Action` dispatch:
 
 ```rust
 // src/lib.rs
-use mochiclaw_sdk::tool::{Tool, ToolExecutionRequest, ToolExecutionResponse};
+use mochiclaw_sdk::lambda::{Action, ExecuteToolInput, LambdaInput, LambdaOutput};
+use mochiclaw_sdk::tool::{Tool, ToolExecutionResponse};
 use mochiclaw_sdk::{FnResult, plugin_fn};
 use std::collections::HashMap;
 
-/// Return the list of tools provided by this lambda
+/// Unified lambda entry point - handles all actions
 #[plugin_fn]
-pub fn get_tools() -> FnResult<String> {
-    let tools = vec![make_my_tool()];
-    Ok(serde_json::to_string(&tools).unwrap())
+pub fn lambda_function(params: LambdaInput) -> FnResult<LambdaOutput> {
+    match params.action {
+        Action::GetTools => handle_get_tools(),
+        Action::ExecuteTool => handle_execute_tool(params),
+        _ => Ok(LambdaOutput {
+            effects: vec![],
+            result: ToolExecutionResponse {
+                result: String::new(),
+                error: Some("Unsupported action".to_string()),
+            }
+            .to_bytes()?,
+            new_state: Vec::new(),
+        }),
+    }
 }
 
-/// Execute a tool by name with the provided arguments
-#[plugin_fn]
-pub fn execute_tool(request: ToolExecutionRequest) -> FnResult<ToolExecutionResponse> {
-    let result = match request.name.as_str() {
-        "my_tool" => do_something(&request.arguments)?,
-        _ => return Err(format!("Unknown tool: {}", request.name).into()),
+fn handle_get_tools() -> FnResult<LambdaOutput> {
+    let tools = vec![make_my_tool()];
+    let tools_json = serde_json::to_string(&tools).unwrap();
+    Ok(LambdaOutput {
+        effects: vec![],
+        result: rmp_serde::to_vec(&tools_json)?,
+        new_state: Vec::new(),
+    })
+}
+
+fn handle_execute_tool(params: LambdaInput) -> FnResult<LambdaOutput> {
+    let input: ExecuteToolInput = rmp_serde::from_slice(&params.payload)?;
+
+    let result = match input.name.as_str() {
+        "my_tool" => do_something(&input.arguments)?,
+        _ => return Err(format!("Unknown tool: {}", input.name).into()),
     };
 
-    Ok(ToolExecutionResponse {
+    let response = ToolExecutionResponse {
         result,
         error: None,
+    };
+    Ok(LambdaOutput {
+        effects: vec![],
+        result: response.to_bytes()?,
+        new_state: Vec::new(),
     })
 }
 
@@ -141,45 +170,70 @@ cp lambdas/mochi-my-lambda/manifest.toml \
    ./target/lambdas/
 ```
 
-## Lambda Types
+## Lambda Types & Actions
+
+All lambdas use `lambda_function` with `Action` dispatch. The supported actions depend on the lambda type:
 
 ### Tool Lambda
 
-Provides tools to the agent:
-
-```rust
-#[plugin_fn]
-pub fn get_tools() -> FnResult<String>
-
-#[plugin_fn]
-pub fn execute_tool(request: ToolExecutionRequest) -> FnResult<ToolExecutionResponse>
-```
+| Action | Input | Output |
+|--------|-------|--------|
+| `GetTools` | none | `String` (JSON array of tools) |
+| `ExecuteTool` | `ExecuteToolInput` | `ToolExecutionResponse` |
 
 ### Provider Lambda
 
-Provides LLM access:
-
-```rust
-#[plugin_fn]
-pub fn chat(request: ChatRequest) -> FnResult<ChatResponse>
-
-#[plugin_fn]
-pub fn chat_stream(request: ChatRequest) -> FnResult<ChatResponse>  // streaming
-```
+| Action | Input | Output |
+|--------|-------|--------|
+| `Chat` | `ChatInput` | `ChatResponse` |
 
 ### Channel Lambda
 
-Handles messaging:
+| Action | Input | Output |
+|--------|-------|--------|
+| `PreparePoll` | `PreparePollInput` | `DigestOutput` |
+| `FormatSend` | `SendInput` | `SendOutput` |
+| `SetTyping` | `SetTypingInput` | `()` |
+| `Login` | `LoginInput` | `LoginOutput` |
+| `CheckLogin` | `CheckLoginInput` | `CheckLoginOutput` |
+
+## Effect System (HTTP)
+
+**Important**: HTTP is no longer a direct host function. Instead, lambdas return `HttpEffect` declarations that the host executes.
+
+For provider lambdas like OpenAI, the `Chat` action typically involves two calls:
+
+1. **First call**: Return `HttpEffect` for the API request
+2. **Second call**: With `effect_results` containing the HTTP response, parse and return `ChatResponse`
 
 ```rust
-#[plugin_fn]
-pub fn poll(params: PollParams) -> FnResult<PollResponse>
+// Example: OpenAI provider returns HttpEffect
+fn handle_chat(params: LambdaInput) -> FnResult<LambdaOutput> {
+    if !params.effect_results.is_empty() {
+        // Second call: parse HTTP response
+        let response = &params.effect_results[0];
+        let chat_response = parse_openai_response(response)?;
+        return Ok(LambdaOutput {
+            effects: vec![],
+            result: chat_response.to_bytes()?,
+            new_state: Vec::new(),
+        });
+    }
 
-#[plugin_fn]
-pub fn send_text(params: SendTextParams) -> FnResult<SendResponse>
-
-#[plugin_fn]
-pub fn set_typing(params: SetTypingParams) -> FnResult<()>
+    // First call: return HTTP effect
+    let effect = HttpEffect {
+        method: "POST".to_string(),
+        url: "https://api.openai.com/v1/chat/completions".to_string(),
+        headers: headers!["Authorization" => format!("Bearer {}", api_key)],
+        body: Some(request_body),
+        timeout_ms: 60000,
+    };
+    Ok(LambdaOutput {
+        effects: vec![Effect::HttpRequest(effect)],
+        result: Vec::new(),
+        new_state: Vec::new(),
+    })
+}
 ```
 
 ## Using Host Functions
@@ -187,13 +241,9 @@ pub fn set_typing(params: SetTypingParams) -> FnResult<()>
 Access capabilities from `mochiclaw_sdk::host`:
 
 ```rust
-use mochiclaw_sdk::host::http::{HttpClient, HttpError};
 use mochiclaw_sdk::host::fs::{fs_read, fs_write};
 use mochiclaw_sdk::host::kv::{kv_get, kv_set};
 use mochiclaw_sdk::host::random::{rand_u32, rand_bytes};
-
-// HTTP request
-let resp = HttpClient::get("https://api.example.com/data").send()?;
 
 // File read
 let content = fs_read("file.txt", workspace, 0, 100)?;
@@ -226,9 +276,14 @@ let workspace = match config::get("workspace") {
 // Return error in tool execution
 Err("Something went wrong".into())
 
-// Or in ToolExecutionResponse
-Ok(ToolExecutionResponse {
-    result: String::new(),
-    error: Some("Error message".to_string()),
+// Or in LambdaOutput with error field
+Ok(LambdaOutput {
+    effects: vec![],
+    result: ToolExecutionResponse {
+        result: String::new(),
+        error: Some("Error message".to_string()),
+    }
+    .to_bytes()?,
+    new_state: Vec::new(),
 })
 ```
