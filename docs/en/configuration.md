@@ -127,10 +127,48 @@ Model configurations. Key is the model name.
 
 ## Environment Variables
 
+All configuration options can be overridden via environment variables. **Environment variables take priority over config file values.**
+
+### Config File Path
+
+| Variable | Description |
+|----------|-------------|
+| `MOCHICLAW_CONFIG` | Path to config file (default: `config.toml`) |
+
+**Priority**: CLI argument > `MOCHICLAW_CONFIG` env var > `config.toml` (default)
+
+### Naming Convention
+
+Use prefix `MOCHICLAW`, double underscore `__` indicates nesting level:
+
+| Environment Variable | Corresponding Config Path |
+|---------------------|---------------------------|
+| `MOCHICLAW__AGENT__MODEL` | `agent.model` |
+| `MOCHICLAW__AGENT__MAX_ITERATIONS` | `agent.max_iterations` |
+| `MOCHICLAW__RUNTIME__LOG__LEVEL` | `runtime.log.level` |
+| `MOCHICLAW__RUNTIME__LOG__DIR` | `runtime.log.dir` |
+| `MOCHICLAW__RUNTIME__NETWORK__USE_SYSTEM_PROXY` | `runtime.network.use_system_proxy` |
+
+### Examples
+
+```bash
+# Override agent config
+export MOCHICLAW__AGENT__MODEL="claude-3-sonnet"
+export MOCHICLAW__AGENT__MAX_ITERATIONS=100
+
+# Override runtime.log config
+export MOCHICLAW__RUNTIME__LOG__LEVEL="debug"
+export MOCHICLAW__RUNTIME__LOG__DIR="/var/log/mochiclaw"
+
+# Override nested network config
+export MOCHICLAW__RUNTIME__NETWORK__USE_SYSTEM_PROXY="true"
+```
+
+### Other Environment Variables
+
 | Variable | Description |
 |----------|-------------|
 | `HTTP_PROXY` | Global HTTP proxy (fallback when `proxy_url` not set) |
-| `api_key` | Can be used instead of `api_key` in config |
 
 ## Capability Merge Rules
 

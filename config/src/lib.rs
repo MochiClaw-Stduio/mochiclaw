@@ -9,6 +9,9 @@ mod model;
 pub mod plugin;
 mod runtime;
 
+use config::{
+    Config as ConfigLoader, ConfigError as ConfigMgrError, Environment, File, FileFormat,
+};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -44,17 +47,23 @@ pub struct Config {
 }
 
 impl Config {
-    /// Load configuration from a TOML file
+    /// Load configuration from a TOML file with environment variable overrides.
+    /// Environment variables with prefix `MOCHICLAW_` take priority over config file values.
+    /// Use double underscore `__` for nesting: e.g., `MOCHICLAW_AGENT__MODEL`
     pub fn from_file(path: &Path) -> Result<Self, ConfigError> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| ConfigError::Io(format!("failed to read {}: {}", path.display(), e)))?;
-        Self::from_toml(&content)
-    }
+        let path_str = path.to_string_lossy();
+        let config = ConfigLoader::builder()
+            .add_source(File::new(&path_str, FileFormat::Toml).required(true))
+            .add_source(Environment::with_prefix("MOCHICLAW").separator("__"))
+            .build()
+            .map_err(|e: ConfigMgrError| {
+                ConfigError::Parse(format!("failed to build config: {}", e))
+            })?;
 
-    /// Parse configuration from TOML string
-    pub fn from_toml(toml: &str) -> Result<Self, ConfigError> {
-        let mut config: Config = toml::from_str(toml)
-            .map_err(|e| ConfigError::Parse(format!("failed to parse config: {}", e)))?;
+        let mut config: Config = config
+            .try_deserialize()
+            .map_err(|e| ConfigError::Parse(format!("failed to deserialize config: {}", e)))?;
+
         config.migrate()?;
         Ok(config)
     }

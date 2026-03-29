@@ -127,10 +127,48 @@ Channel 插件配置。
 
 ## 环境变量
 
+所有配置项都支持通过环境变量覆盖，**环境变量优先级高于配置文件**。
+
+### 配置文件路径
+
+| 变量 | 描述 |
+|------|------|
+| `MOCHICLAW_CONFIG` | 配置文件路径（默认：`config.toml`） |
+
+**优先级**：CLI 参数 > `MOCHICLAW_CONFIG` 环境变量 > `config.toml`（默认）
+
+### 命名规则
+
+使用前缀 `MOCHICLAW`，双下划线 `__` 表示嵌套层级：
+
+| 环境变量格式 | 对应配置路径 |
+|-------------|-------------|
+| `MOCHICLAW__AGENT__MODEL` | `agent.model` |
+| `MOCHICLAW__AGENT__MAX_ITERATIONS` | `agent.max_iterations` |
+| `MOCHICLAW__RUNTIME__LOG__LEVEL` | `runtime.log.level` |
+| `MOCHICLAW__RUNTIME__LOG__DIR` | `runtime.log.dir` |
+| `MOCHICLAW__RUNTIME__NETWORK__USE_SYSTEM_PROXY` | `runtime.network.use_system_proxy` |
+
+### 示例
+
+```bash
+# 覆盖 agent 配置
+export MOCHICLAW__AGENT__MODEL="claude-3-sonnet"
+export MOCHICLAW__AGENT__MAX_ITERATIONS=100
+
+# 覆盖 runtime.log 配置
+export MOCHICLAW__RUNTIME__LOG__LEVEL="debug"
+export MOCHICLAW__RUNTIME__LOG__DIR="/var/log/mochiclaw"
+
+# 覆盖嵌套的网络配置
+export MOCHICLAW__RUNTIME__NETWORK__USE_SYSTEM_PROXY="true"
+```
+
+### 其他环境变量
+
 | 变量 | 描述 |
 |------|------|
 | `HTTP_PROXY` | 全局 HTTP 代理（当 `proxy_url` 未设置时的后备） |
-| `api_key` | 可替代 config 中的 `api_key` |
 
 ## 能力合并规则
 
