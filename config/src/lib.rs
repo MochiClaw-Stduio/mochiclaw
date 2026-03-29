@@ -18,7 +18,9 @@ use std::path::Path;
 pub use agent::AgentConfig;
 pub use channel::ChannelConfig;
 pub use error::ConfigError;
-pub use lambda::{FsCapabilitiesOverride, LambdaCapabilitiesOverride, LambdaConfig, NetworkCapabilitiesOverride};
+pub use lambda::{
+    FsCapabilitiesOverride, LambdaCapabilitiesOverride, LambdaConfig, NetworkCapabilitiesOverride,
+};
 pub use model::ModelConfig;
 pub use runtime::{LogConfig, NetworkConfig, RuntimeConfig};
 

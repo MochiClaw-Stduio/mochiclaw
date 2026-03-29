@@ -136,12 +136,25 @@ impl PluginHost {
                     .replace("${workspace}", &workspace)
             };
 
+            // Resolve ${workspace} placeholder in whitelists/blacklists
+            let resolve_list = |list: &[String]| -> Vec<String> {
+                list.iter()
+                    .map(|p| {
+                        if p.is_empty() {
+                            workspace.clone()
+                        } else {
+                            p.replace("${workspace}", &workspace)
+                        }
+                    })
+                    .collect()
+            };
+
             let fs_context = FsContext::new(
                 allowed_root.into(),
-                capabilities.fs.read_whitelist.clone(),
-                capabilities.fs.write_whitelist.clone(),
-                capabilities.fs.read_blacklist.clone(),
-                capabilities.fs.write_blacklist.clone(),
+                resolve_list(&capabilities.fs.read_whitelist),
+                resolve_list(&capabilities.fs.write_whitelist),
+                resolve_list(&capabilities.fs.read_blacklist),
+                resolve_list(&capabilities.fs.write_blacklist),
             );
             builder = builder.with_fs(fs_context);
         }

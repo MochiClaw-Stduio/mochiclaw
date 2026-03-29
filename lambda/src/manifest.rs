@@ -233,8 +233,8 @@ impl std::error::Error for ManifestError {}
 #[cfg(test)]
 mod tests {
     use crate::manifest::{Capabilities, FsCapabilities, NetworkCapabilities};
-    use mochiclaw_config::lambda::{
-        LambdaCapabilitiesOverride, FsCapabilitiesOverride, NetworkCapabilitiesOverride,
+    use mochiclaw_config::{
+        FsCapabilitiesOverride, LambdaCapabilitiesOverride, NetworkCapabilitiesOverride,
     };
 
     fn default_capabilities() -> Capabilities {
