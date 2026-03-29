@@ -8,7 +8,7 @@ build-plugin:
 
 # Build test plugins (for integration tests)
 build-test-plugin:
-    cargo build --release --target wasm32-unknown-unknown -p test-kv -p test-random -p test-http -p test-fs
+    cargo build --release --target wasm32-unknown-unknown -p test-kv -p test-random -p test-fs
 
 # Test native crates (depends on test plugin WASM being built)
 test-native: build-test-plugin

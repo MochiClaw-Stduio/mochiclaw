@@ -2,16 +2,11 @@
 //!
 //! Functions for parsing WeChat API responses and building request payloads.
 
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
-use mochiclaw_sdk::{
-    host::{rand_bytes, rand_u32},
-    message::InboundMessage,
-};
+use mochiclaw_sdk::{host::rand_u32, message::InboundMessage};
 use serde::Deserialize;
 use std::collections::HashMap;
 
 use crate::constants::*;
-use crate::crypto::{encrypt_aes_ecb, md5_hex};
 use crate::types::*;
 
 // ============================================================================
@@ -202,23 +197,6 @@ pub fn parse_qr_status(raw_json: &str) -> QrStatusResult {
     }
 }
 
-/// Parse send message response
-pub fn parse_send_response(raw_json: &str) -> Result<(), String> {
-    let resp: WeixinApiResponse = serde_json::from_str(raw_json).map_err(|e| e.to_string())?;
-
-    if let Some(errcode) = resp.errcode
-        && errcode != 0
-    {
-        return Err(format!("send failed: errcode={}", errcode));
-    }
-    if let Some(ret) = resp.ret
-        && ret != 0
-    {
-        return Err(format!("send failed: ret={}", ret));
-    }
-    Ok(())
-}
-
 /// Parse getConfig response to extract typing_ticket
 pub fn parse_get_config_response(raw_json: &str) -> Result<String, String> {
     #[derive(Debug, Deserialize)]
@@ -281,125 +259,6 @@ pub fn build_send_message(
     }
     if !context_token.is_empty() {
         msg["context_token"] = serde_json::json!(context_token);
-    }
-
-    serde_json::json!({
-        "msg": msg,
-        "base_info": { "channel_version": CHANNEL_VERSION }
-    })
-}
-
-/// Build media upload request
-pub fn build_media_upload(
-    to_user_id: &str,
-    file_data: &[u8],
-    _file_name: &str,
-    media_type: i32,
-) -> Result<(String, String, Vec<u8>), String> {
-    // Generate random AES key
-    let mut aes_key = [0u8; 16];
-    rand_bytes(&mut aes_key);
-    let aes_key_hex = hex::encode(aes_key);
-    let aes_key_b64 = BASE64.encode(aes_key);
-
-    // Calculate sizes
-    let raw_size = file_data.len();
-    let padded_size = (raw_size + 1).div_ceil(16) * 16;
-
-    // Encrypt the file
-    let encrypted = encrypt_aes_ecb(file_data, &aes_key);
-
-    // Generate file key
-    let mut file_key_bytes = [0u8; 16];
-    rand_bytes(&mut file_key_bytes);
-    let file_key = hex::encode(file_key_bytes);
-
-    // Build upload request
-    let upload_req = serde_json::json!({
-        "filekey": file_key,
-        "media_type": media_type,
-        "to_user_id": to_user_id,
-        "rawsize": raw_size,
-        "rawfilemd5": md5_hex(file_data),
-        "filesize": padded_size,
-        "no_need_thumb": true,
-        "aeskey": aes_key_hex,
-    });
-
-    Ok((
-        serde_json::to_string(&upload_req).map_err(|e| e.to_string())?,
-        aes_key_b64,
-        encrypted,
-    ))
-}
-
-/// Parameters for building a media message
-pub struct MediaParams {
-    pub media_type: i32,
-    pub download_param: String,
-    pub aes_key_b64: String,
-    pub file_name: String,
-    pub file_size: usize,
-}
-
-/// Build a media message request body
-pub fn build_media_message(
-    to_user_id: &str,
-    content: &str,
-    context_token: &str,
-    media: MediaParams,
-) -> serde_json::Value {
-    let client_id = format!("mochiclaw-{:x}", rand_u32());
-
-    let (item_type, item_key) = match media.media_type {
-        UPLOAD_MEDIA_IMAGE => (ITEM_IMAGE, "image_item"),
-        UPLOAD_MEDIA_VIDEO => (ITEM_VIDEO, "video_item"),
-        _ => (ITEM_FILE, "file_item"),
-    };
-
-    let mut media_item = serde_json::json!({
-        "media": {
-            "encrypt_query_param": media.download_param,
-            "aes_key": BASE64.encode(media.aes_key_b64.as_bytes()),
-            "encrypt_type": 1,
-        }
-    });
-
-    if item_type == ITEM_IMAGE {
-        media_item["mid_size"] = serde_json::json!(media.file_size);
-    } else if item_type == ITEM_VIDEO {
-        media_item["video_size"] = serde_json::json!(media.file_size);
-    } else if item_type == ITEM_FILE {
-        media_item["file_name"] = serde_json::json!(media.file_name);
-        media_item["len"] = serde_json::json!(format!("{}", media.file_size));
-    }
-
-    let mut msg = serde_json::json!({
-        "from_user_id": "",
-        "to_user_id": to_user_id,
-        "client_id": client_id,
-        "message_type": MESSAGE_TYPE_BOT,
-        "message_state": MESSAGE_STATE_FINISH,
-        "item_list": [{
-            "type": item_type,
-            item_key: media_item
-        }],
-    });
-
-    if !context_token.is_empty() {
-        msg["context_token"] = serde_json::json!(context_token);
-    }
-    if !content.is_empty() {
-        // Add text as separate item
-        if let Some(arr) = msg["item_list"].as_array_mut() {
-            arr.insert(
-                0,
-                serde_json::json!({
-                    "type": ITEM_TEXT,
-                    "text_item": { "text": content }
-                }),
-            );
-        }
     }
 
     serde_json::json!({

@@ -3,40 +3,7 @@
 //! Type definitions for WeChat iLink HTTP API requests and responses.
 
 use mochiclaw_sdk::message::InboundMessage;
-use mochiclaw_sdk::{FromBytes, Msgpack, ToBytes};
 use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize, FromBytes, ToBytes)]
-#[encoding(Msgpack)]
-pub struct UploadResponse {
-    pub upload_param: String,
-    pub aes_key: String,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Deserialize, FromBytes)]
-#[encoding(Msgpack)]
-pub struct GetUploadUrlParams {
-    pub token: String,
-    pub to_user_id: String,
-    pub file_data_base64: String,
-    pub file_name: String,
-    pub media_type: String,
-}
-
-#[derive(Debug, Deserialize, FromBytes)]
-#[encoding(Msgpack)]
-pub struct SendMediaParams {
-    pub token: String,
-    pub to_user_id: String,
-    pub content: String,
-    pub context_token: String,
-    pub media_type: String,
-    pub download_param: String,
-    pub aes_key: String,
-    pub file_name: String,
-    pub file_size: usize,
-}
 
 // ============================================================================
 // Internal API Types

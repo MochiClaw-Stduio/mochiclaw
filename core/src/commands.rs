@@ -20,6 +20,7 @@ pub fn parse_command(content: &str) -> Option<(String, String)> {
 }
 
 /// Command metadata
+#[derive(Clone)]
 pub struct CommandInfo {
     /// Short description of the command
     pub description: String,
@@ -37,6 +38,7 @@ impl CommandInfo {
 type CommandFn = Arc<dyn Fn(&str, &str, &str) -> Option<String> + Send + Sync>;
 
 /// Command registry for built-in commands
+#[derive(Clone)]
 pub struct CommandRegistry {
     commands: HashMap<String, (CommandFn, CommandInfo)>,
 }

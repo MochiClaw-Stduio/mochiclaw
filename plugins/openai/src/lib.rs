@@ -1,15 +1,14 @@
 //! OpenAI Compatible Provider Plugin
 //!
 //! This plugin implements an LLM provider using the OpenAI Chat Completions API.
-//! Uses HttpClient from mochiclaw_sdk for HTTP calls.
+//! Uses the lambda_function architecture: returns HTTP effects for host to execute.
 
 use std::collections::HashMap;
 
-use mochiclaw_sdk::host::http::HttpClient;
-use mochiclaw_sdk::provider::{ChatRequest, ChatResponse, MessageRole, ToolCall};
+use mochiclaw_sdk::lambda::{Action, ChatInput, Effect, HttpEffect, LambdaInput, LambdaOutput};
+use mochiclaw_sdk::provider::{ChatResponse, MessageRole, ToolCall};
 use mochiclaw_sdk::tool::Tool;
-use mochiclaw_sdk::{FnResult, FromBytes, Msgpack, ToBytes, plugin_fn};
-use serde::{Deserialize, Serialize};
+use mochiclaw_sdk::{FnResult, plugin_fn};
 
 fn role_to_string(role: &MessageRole) -> &str {
     match role {
@@ -17,13 +16,6 @@ fn role_to_string(role: &MessageRole) -> &str {
         MessageRole::User => "user",
         MessageRole::Assistant => "assistant",
     }
-}
-
-#[derive(Debug, Serialize, Deserialize, FromBytes, ToBytes)]
-#[encoding(Msgpack)]
-struct ChatChunk {
-    delta: String,
-    done: bool,
 }
 
 /// Convert our Tool format to OpenAI's tools format
@@ -69,121 +61,95 @@ fn parse_tool_calls(openai_tool_calls: &[serde_json::Value]) -> Vec<ToolCall> {
         .collect()
 }
 
-/// Non-streaming chat completion
+// ============================================================================
+// Lambda Function Entry Point
+// ============================================================================
+
+/// Unified lambda entry point for provider operations
 #[plugin_fn]
-pub fn chat(request: ChatRequest) -> FnResult<ChatResponse> {
-    // Build the OpenAI request body
-    let openai_messages: Vec<serde_json::Value> = request
-        .messages
-        .iter()
-        .map(|m| {
-            serde_json::json!({
-                "role": role_to_string(&m.role),
-                "content": m.content
-            })
-        })
-        .collect();
-
-    // Build request body with optional tools
-    let mut body = serde_json::json!({
-        "model": request.model,
-        "messages": openai_messages,
-        "max_tokens": request.max_tokens,
-        "temperature": request.temperature,
-    });
-
-    // Add tools if provided
-    if !request.tools.is_empty() {
-        body["tools"] = serde_json::json!(tools_to_openai(&request.tools));
-    }
-
-    // Create HTTP request
-    let api_key = request.api_key.unwrap_or_default();
-    let api_base = request
-        .api_base
-        .unwrap_or_else(|| "https://api.openai.com".to_string());
-    // Remove /v1 suffix if present to avoid double path segments
-    let base = api_base.trim_end_matches('/').trim_end_matches("/v1");
-    let url = format!("{}/v1/chat/completions", base);
-
-    // Make the request using HttpClient
-    let response = match HttpClient::post(&url)
-        .header("Content-Type", "application/json")
-        .header("Authorization", format!("Bearer {}", api_key).as_str())
-        .json(&body)
-    {
-        Ok(client) => match client.send() {
-            Ok(resp) => resp,
-            Err(e) => {
-                return Ok(ChatResponse {
-                    content: String::new(),
-                    tool_calls: Vec::new(),
-                    error: Some(format!("HTTP request failed: {}", e)),
-                });
-            }
-        },
-        Err(e) => {
-            return Ok(ChatResponse {
+pub fn lambda_function(params: LambdaInput) -> FnResult<LambdaOutput> {
+    match params.action {
+        Action::Chat => handle_chat(params),
+        // Other actions (channel/login) not supported by provider
+        _ => Ok(LambdaOutput {
+            effects: vec![],
+            result: rmp_serde::to_vec(&ChatResponse {
                 content: String::new(),
                 tool_calls: Vec::new(),
-                error: Some(format!("Failed to build request: {}", e)),
+                error: Some("provider plugin does not support this action".to_string()),
+            })
+            .unwrap_or_default(),
+            new_state: Vec::new(),
+        }),
+    }
+}
+
+/// Unified chat handler with loop:
+/// - First call: payload=ChatInput, return effect=[http_request]
+/// - Second call: effect_results=[response], return result=ChatResponse
+fn handle_chat(params: LambdaInput) -> FnResult<LambdaOutput> {
+    // Second call: we have HTTP response, parse it and return result
+    if !params.effect_results.is_empty() {
+        let response = &params.effect_results[0];
+        if !response.success {
+            return Ok(LambdaOutput {
+                effects: vec![],
+                result: rmp_serde::to_vec(&ChatResponse {
+                    content: String::new(),
+                    tool_calls: Vec::new(),
+                    error: response.error.clone(),
+                })?,
+                new_state: Vec::new(),
             });
         }
-    };
 
-    let status = response.status;
-    if status != 200 {
-        let body_str = String::from_utf8_lossy(response.bytes()).to_string();
-        return Ok(ChatResponse {
-            content: String::new(),
-            tool_calls: Vec::new(),
-            error: Some(format!(
-                "OpenAI API returned status {}: {}",
-                status, body_str
-            )),
+        let raw_response = response.response.as_deref().unwrap_or("{}");
+        let openai_resp: serde_json::Value = match serde_json::from_str(raw_response) {
+            Ok(v) => v,
+            Err(e) => {
+                return Ok(LambdaOutput {
+                    effects: vec![],
+                    result: rmp_serde::to_vec(&ChatResponse {
+                        content: String::new(),
+                        tool_calls: Vec::new(),
+                        error: Some(format!("failed to parse OpenAI response: {}", e)),
+                    })?,
+                    new_state: Vec::new(),
+                });
+            }
+        };
+
+        // Extract content
+        let content = openai_resp["choices"][0]["message"]["content"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+
+        // Extract tool calls
+        let tool_calls =
+            if let Some(tc) = openai_resp["choices"][0]["message"]["tool_calls"].as_array() {
+                parse_tool_calls(tc)
+            } else {
+                Vec::new()
+            };
+
+        return Ok(LambdaOutput {
+            effects: vec![],
+            result: rmp_serde::to_vec(&ChatResponse {
+                content,
+                tool_calls,
+                error: None,
+            })?,
+            new_state: Vec::new(),
         });
     }
 
-    // Parse the OpenAI response
-    let resp_body = response.bytes();
-    let resp_str = String::from_utf8_lossy(resp_body).to_string();
-    let openai_resp: serde_json::Value = match serde_json::from_str(&resp_str) {
-        Ok(v) => v,
-        Err(e) => {
-            return Ok(ChatResponse {
-                content: String::new(),
-                tool_calls: Vec::new(),
-                error: Some(format!("failed to parse OpenAI response: {}", e)),
-            });
-        }
-    };
+    // First call: build HTTP effect for OpenAI API
+    let input: ChatInput = rmp_serde::from_slice(&params.payload)?;
 
-    // Extract content from response
-    let content = openai_resp["choices"][0]["message"]["content"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
-
-    // Extract tool calls if present
-    let tool_calls = if let Some(tc) = openai_resp["choices"][0]["message"]["tool_calls"].as_array()
-    {
-        parse_tool_calls(tc)
-    } else {
-        Vec::new()
-    };
-
-    Ok(ChatResponse {
-        content,
-        tool_calls,
-        error: None,
-    })
-}
-
-/// Streaming chat completion
-#[plugin_fn]
-pub fn chat_stream(request: ChatRequest) -> FnResult<Vec<u8>> {
-    // Build the OpenAI request body with streaming
-    let openai_messages: Vec<serde_json::Value> = request
+    // Build OpenAI request body
+    let openai_messages: Vec<serde_json::Value> = input
+        .request
         .messages
         .iter()
         .map(|m| {
@@ -194,91 +160,42 @@ pub fn chat_stream(request: ChatRequest) -> FnResult<Vec<u8>> {
         })
         .collect();
 
-    // Build request body with optional tools
     let mut body = serde_json::json!({
-        "model": request.model,
+        "model": input.request.model,
         "messages": openai_messages,
-        "max_tokens": request.max_tokens,
-        "temperature": request.temperature,
-        "stream": true,
+        "max_tokens": input.request.max_tokens,
+        "temperature": input.request.temperature,
     });
 
-    // Add tools if provided
-    if !request.tools.is_empty() {
-        body["tools"] = serde_json::json!(tools_to_openai(&request.tools));
+    if !input.request.tools.is_empty() {
+        body["tools"] = serde_json::json!(tools_to_openai(&input.request.tools));
     }
 
-    // Create HTTP request
-    let api_key = request.api_key.unwrap_or_default();
-    let api_base = request
+    // Build URL
+    let api_key = input.request.api_key.unwrap_or_default();
+    let api_base = input
+        .request
         .api_base
         .unwrap_or_else(|| "https://api.openai.com".to_string());
-    // Remove /v1 suffix if present to avoid double path segments
     let base = api_base.trim_end_matches('/').trim_end_matches("/v1");
     let url = format!("{}/v1/chat/completions", base);
 
-    // Make the streaming request using HttpClient
-    let response = match HttpClient::post(&url)
-        .header("Content-Type", "application/json")
-        .header("Authorization", format!("Bearer {}", api_key).as_str())
-        .json(&body)
-    {
-        Ok(client) => match client.send() {
-            Ok(resp) => resp,
-            Err(e) => {
-                let chunk = ChatChunk {
-                    delta: format!("HTTP request failed: {}", e),
-                    done: true,
-                };
-                return Ok(rmp_serde::to_vec(&vec![chunk]).unwrap_or_default());
-            }
-        },
-        Err(e) => {
-            let chunk = ChatChunk {
-                delta: format!("Failed to build request: {}", e),
-                done: true,
-            };
-            return Ok(rmp_serde::to_vec(&vec![chunk]).unwrap_or_default());
-        }
+    // Build headers
+    let mut headers = HashMap::new();
+    headers.insert("Content-Type".to_string(), "application/json".to_string());
+    headers.insert("Authorization".to_string(), format!("Bearer {}", api_key));
+
+    let effect = HttpEffect {
+        method: "POST".to_string(),
+        url,
+        headers,
+        body: Some(body.to_string()),
+        timeout_ms: 60000, // 60 second timeout for chat
     };
 
-    // Parse SSE stream from response body
-    let resp_body = response.bytes();
-    let body_str = String::from_utf8_lossy(resp_body).to_string();
-    let lines: Vec<&str> = body_str.lines().collect();
-    let mut chunks: Vec<ChatChunk> = Vec::new();
-
-    for line in lines {
-        if let Some(data) = line.strip_prefix("data: ") {
-            if data == "[DONE]" {
-                continue;
-            }
-            if let Ok(delta) = serde_json::from_str::<serde_json::Value>(data)
-                && let Some(content) = delta["choices"][0]["delta"]["content"].as_str()
-            {
-                chunks.push(ChatChunk {
-                    delta: content.to_string(),
-                    done: false,
-                });
-            }
-        }
-    }
-
-    if let Some(last) = chunks.last_mut() {
-        last.done = true;
-    }
-
-    Ok(rmp_serde::to_vec(&chunks).unwrap_or_default())
-}
-
-/// Get plugin name
-#[plugin_fn]
-pub fn get_name() -> FnResult<String> {
-    Ok("openai".to_string())
-}
-
-/// Get supported models - returns * to indicate all models
-#[plugin_fn]
-pub fn get_models() -> FnResult<String> {
-    Ok("*".to_string())
+    Ok(LambdaOutput {
+        effects: vec![Effect::HttpRequest(effect)],
+        result: Vec::new(),
+        new_state: Vec::new(),
+    })
 }

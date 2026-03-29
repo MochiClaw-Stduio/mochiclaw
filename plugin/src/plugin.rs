@@ -3,10 +3,10 @@
 //! This module provides concurrent plugin execution via extism's Pool mechanism.
 //! Each plugin type gets its own Pool, allowing multiple instances to run simultaneously.
 
+use crate::context::{PluginContext, PluginContextMap};
 use crate::discover::DiscoveredPlugin;
 use crate::error::Error;
 use crate::host::fs::FsContext;
-use crate::host::http::HttpContext;
 use crate::host::kv::PluginKV;
 use crate::manifest::PluginManifest;
 use extism::{CompiledPlugin, Manifest, Plugin, PluginBuilder, Pool, PoolBuilder, Wasm};
@@ -30,8 +30,8 @@ pub struct PluginHost {
     fallback_proxy_url: Option<String>,
     /// Whether to use system proxy when fallback_proxy_url is None
     use_system_proxy: bool,
-    /// Manifests for all loaded plugins
-    manifests: HashMap<String, PluginManifest>,
+    /// Plugin contexts (manifest + config merged)
+    contexts: PluginContextMap,
     /// Workspace directory for fs plugins
     workspace: Option<String>,
 }
@@ -44,7 +44,7 @@ impl PluginHost {
             kv: Arc::new(PluginKV::new()),
             fallback_proxy_url: None,
             use_system_proxy: false,
-            manifests: HashMap::new(),
+            contexts: PluginContextMap::new(),
             workspace: None,
         }
     }
@@ -122,18 +122,6 @@ impl PluginHost {
             capabilities.allowed_kv_read.clone(),
         );
 
-        // Add HTTP functions if network is enabled
-        if capabilities.network.enabled {
-            let http_context = HttpContext::new(
-                effective_proxy,
-                capabilities.network.allowed_hosts.clone(),
-                capabilities.network.denied_hosts.clone(),
-                self.use_system_proxy,
-            )
-            .map_err(|e| Error::Plugin(format!("failed to create HTTP context: {}", e)))?;
-            builder = builder.with_http(http_context);
-        }
-
         // Add FS functions if fs is enabled
         if capabilities.fs.enabled {
             let workspace = self.workspace.clone().unwrap_or_else(|| ".".to_string());
@@ -197,9 +185,6 @@ impl PluginHost {
         self.compiled.insert(name.to_string(), compiled);
         self.pools.insert(name.to_string(), pool);
 
-        // Store the manifest for later inspection
-        self.manifests.insert(name.to_string(), manifest.clone());
-
         tracing::info!(
             "loaded plugin '{}' from {} (network: {:?}, fs: {:?})",
             name,
@@ -207,6 +192,19 @@ impl PluginHost {
             capabilities.network.enabled,
             capabilities.fs.enabled
         );
+
+        // Store plugin context (merged manifest + config)
+        let merged_manifest = PluginManifest {
+            name: manifest.name.clone(),
+            version: manifest.version.clone(),
+            description: manifest.description.clone(),
+            capabilities: capabilities.clone(),
+            features: manifest.features.clone(),
+            settings: manifest.settings.clone(),
+        };
+        let ctx = PluginContext::new(merged_manifest, config.clone(), self.use_system_proxy);
+        self.contexts.insert(name.to_string(), ctx);
+
         Ok(())
     }
 
@@ -278,11 +276,16 @@ impl PluginHost {
 
     /// Get a list of plugin names that declared features.tool = true
     pub fn tool_plugins(&self) -> Vec<String> {
-        self.manifests
+        self.contexts
             .iter()
-            .filter(|(_, m)| m.features.tool)
+            .filter(|(_, ctx)| ctx.manifest.features.tool)
             .map(|(name, _)| name.clone())
             .collect()
+    }
+
+    /// Get the plugin context (manifest + config) for a loaded plugin
+    pub fn plugin_context(&self, name: &str) -> Option<&PluginContext> {
+        self.contexts.get(name)
     }
 
     /// Load a discovered plugin with default config

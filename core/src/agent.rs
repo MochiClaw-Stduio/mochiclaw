@@ -4,40 +4,58 @@ use crate::bus::MessageBus;
 use crate::commands::{CommandRegistry, parse_command};
 use crate::context::ContextBuilder;
 use crate::error::Error;
+use crate::http_executor::AsyncHttpExecutor;
+use crate::lambda_loop::lambda_call_typed;
 use crate::session::SessionManager;
 use mochiclaw_config::{ChannelConfig, Config, ModelConfig};
 use mochiclaw_plugin::PluginHost;
-use mochiclaw_sdk::channel::{
-    PollParams, PollResponse, SendResponse, SendTextParams, SetTypingParams,
-};
+use mochiclaw_sdk::lambda::{Action, ChatInput, SendInput, SendOutput, SetTypingInput};
 use mochiclaw_sdk::message::InboundMessage;
 use mochiclaw_sdk::provider::{ChatRequest, ChatResponse, Message, MessageRole};
 use mochiclaw_sdk::tool::{Tool, ToolExecutionResponse};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use tokio::time::{interval, timeout};
 
 pub struct AgentLoop {
     bus: Arc<MessageBus>,
     plugin_host: Arc<PluginHost>,
+    http_executor: Arc<AsyncHttpExecutor>,
     model_config: ModelConfig,
     max_iterations: usize,
     /// Channel configurations for polling (channel_name -> config)
     channel_configs: HashMap<String, ChannelConfig>,
-    /// Per-channel polling state (get_updates_buf only, context_token is handled by plugin)
-    poll_state: tokio::sync::Mutex<HashMap<String, String>>,
+    /// Per-channel polling state (MessagePack bytes)
+    poll_state: Arc<tokio::sync::Mutex<HashMap<String, Vec<u8>>>>,
     /// Session manager for conversation history (uses Mutex for interior mutability)
-    sessions: Mutex<SessionManager>,
+    sessions: Arc<Mutex<SessionManager>>,
     /// Command registry for slash commands
     commands: CommandRegistry,
     /// Context builder for system prompts
     context_builder: ContextBuilder,
     /// Available tool definitions from tool plugins
-    tool_definitions: Mutex<Vec<Tool>>,
+    tool_definitions: Arc<Mutex<Vec<Tool>>>,
     /// Mapping from tool name to plugin name that provides it
-    tool_plugin_map: Mutex<HashMap<String, String>>,
+    tool_plugin_map: Arc<Mutex<HashMap<String, String>>>,
+}
+
+impl Clone for AgentLoop {
+    fn clone(&self) -> Self {
+        Self {
+            bus: Arc::clone(&self.bus),
+            plugin_host: Arc::clone(&self.plugin_host),
+            http_executor: Arc::clone(&self.http_executor),
+            model_config: self.model_config.clone(),
+            max_iterations: self.max_iterations,
+            channel_configs: self.channel_configs.clone(),
+            poll_state: Arc::clone(&self.poll_state),
+            sessions: Arc::clone(&self.sessions),
+            commands: self.commands.clone(),
+            context_builder: self.context_builder.clone(),
+            tool_definitions: Arc::clone(&self.tool_definitions),
+            tool_plugin_map: Arc::clone(&self.tool_plugin_map),
+        }
+    }
 }
 
 impl AgentLoop {
@@ -89,16 +107,17 @@ impl AgentLoop {
 
         Self {
             bus,
-            plugin_host,
+            plugin_host: Arc::clone(&plugin_host),
+            http_executor: Arc::new(AsyncHttpExecutor::new(Arc::clone(&plugin_host))),
             model_config,
             max_iterations: config.agent.max_iterations,
             channel_configs,
-            poll_state: tokio::sync::Mutex::new(HashMap::new()),
-            sessions: Mutex::new(SessionManager::new(sessions_dir)),
+            poll_state: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            sessions: Arc::new(Mutex::new(SessionManager::new(sessions_dir))),
             commands: CommandRegistry::new(),
             context_builder: ContextBuilder::new(workspace),
-            tool_definitions: Mutex::new(Vec::new()),
-            tool_plugin_map: Mutex::new(HashMap::new()),
+            tool_definitions: Arc::new(Mutex::new(Vec::new())),
+            tool_plugin_map: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -175,119 +194,60 @@ impl AgentLoop {
         // Initialize tool plugins
         self.load_tool_plugins().await;
 
-        let mut poll_interval = interval(Duration::from_secs(2));
-
-        loop {
-            // Poll channel plugins for new messages
-            self.poll_channels().await;
-
-            // Process any inbound messages from the bus
-            match timeout(Duration::from_millis(100), self.bus.recv_inbound()).await {
-                Ok(Some(msg)) => {
-                    if let Err(e) = self.process_message(msg).await {
-                        tracing::error!("failed to process message: {}", e);
-                    }
-                }
-                Ok(None) => {
-                    tracing::debug!("inbound channel closed");
-                    break;
-                }
-                Err(_) => {
-                    // timeout, continue to poll
-                }
-            }
-
-            poll_interval.tick().await;
-        }
-
-        tracing::info!("AgentLoop stopped");
-        Ok(())
-    }
-
-    /// Poll all configured channel plugins for new messages
-    async fn poll_channels(&self) {
+        // Spawn independent polling task for each channel
+        let mut poller_handles: Vec<tokio::task::JoinHandle<()>> = Vec::new();
         for (channel_name, config) in &self.channel_configs {
             if !config.enabled {
                 continue;
             }
-
-            // Get token from config
-            let token = match config.token.as_deref() {
-                Some(t) => t,
-                None => {
-                    tracing::warn!("no token found for channel {}", channel_name);
-                    continue;
-                }
-            };
-
-            tracing::debug!(
-                "polling channel {} with token length {}",
-                channel_name,
-                token.len()
-            );
-
-            let get_updates_buf = {
-                let state = self.poll_state.lock().await;
-                state.get(channel_name).cloned().unwrap_or_default()
-            };
-
-            let poll_params = PollParams {
-                token: token.to_string(),
-                get_updates_buf,
-            };
-
-            // Call the channel plugin's poll function
-            let Ok(resp) = self.plugin_host.call::<PollParams, PollResponse>(
-                channel_name,
-                "poll",
-                &poll_params,
-            ) else {
-                tracing::warn!("poll call failed for {}", channel_name);
+            if config.token.is_none() {
+                tracing::warn!("no token for channel {}, skipping", channel_name);
                 continue;
-            };
-
-            let buf_len = resp.get_updates_buf.len();
-            if let Some(ref err) = resp.error {
-                tracing::info!(
-                    "poll {}: {} messages (buf={}), debug: {}",
-                    channel_name,
-                    resp.messages.len(),
-                    buf_len,
-                    err
-                );
-            } else {
-                tracing::debug!(
-                    "poll {}: {} messages (buf={})",
-                    channel_name,
-                    resp.messages.len(),
-                    buf_len
-                );
             }
 
-            // Update poll state (just the get_updates_buf cursor)
-            // Note: context_token is now handled internally by the channel plugin
-            if !resp.get_updates_buf.is_empty() {
-                let mut state = self.poll_state.lock().await;
-                state.insert(channel_name.clone(), resp.get_updates_buf);
-            }
+            let poller = crate::poller::spawn_channel_poller(
+                channel_name.clone(),
+                config.clone(),
+                Arc::clone(&self.bus),
+                Arc::clone(&self.plugin_host),
+                Arc::clone(&self.http_executor),
+                Arc::clone(&self.poll_state),
+            );
+            poller_handles.push(poller);
+        }
 
-            // Send each message to the bus
-            for mut inbound in resp.messages {
-                // Ensure channel is set correctly (plugin may not set it)
-                inbound.channel = channel_name.clone();
+        tracing::info!("spawned {} channel poller tasks", poller_handles.len());
 
-                tracing::debug!(
-                    "received message from {} in chat {}: {}...",
-                    inbound.sender_id,
-                    inbound.chat_id,
-                    inbound.content.chars().take(50).collect::<String>()
-                );
-
-                if let Err(e) = self.bus.send_inbound(inbound).await {
-                    tracing::error!("failed to send inbound: {}", e);
+        // Pure consumer loop - only receives from bus and processes messages
+        loop {
+            match self.bus.recv_inbound().await {
+                Some(msg) => {
+                    // Spawn processing task for parallelism
+                    let agent = self.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = agent.process_message(msg).await {
+                            tracing::error!("failed to process message: {}", e);
+                        }
+                    });
+                }
+                None => {
+                    tracing::debug!("inbound channel closed");
+                    break;
                 }
             }
         }
+
+        // Graceful shutdown: abort poller tasks
+        tracing::info!(
+            "AgentLoop stopping - aborting {} poller tasks",
+            poller_handles.len()
+        );
+        for handle in poller_handles {
+            handle.abort();
+        }
+
+        tracing::info!("AgentLoop stopped");
+        Ok(())
     }
 
     async fn process_message(&self, msg: InboundMessage) -> Result<(), Error> {
@@ -332,9 +292,6 @@ impl AgentLoop {
 
         tracing::info!("processing message from {}: {}", msg.channel, msg.content);
 
-        // Send typing start indicator (best-effort, non-blocking)
-        self.set_typing(&msg.channel, &msg.chat_id, true).await;
-
         // Get or create session for this conversation
         let session_key = msg.session_key();
         let history = {
@@ -378,6 +335,27 @@ impl AgentLoop {
             session.add_message("user", &msg.content);
         }
 
+        // Send typing start indicator before LLM processing
+        if let Some(cfg) = self.channel_configs.get(&msg.channel)
+            && let Some(token) = &cfg.token
+        {
+            let typing_input = SetTypingInput {
+                token: token.clone(),
+                chat_id: msg.chat_id.clone(),
+                typing: true,
+            };
+            let _: Option<mochiclaw_sdk::lambda::SendOutput> = lambda_call_typed(
+                &self.plugin_host,
+                Arc::clone(&self.http_executor),
+                &msg.channel,
+                Action::SetTyping,
+                &typing_input,
+                &[],
+            )
+            .await
+            .ok();
+        }
+
         // Main agent loop - handle tool calls iteratively
         let mut iterations = 0;
         let final_response = loop {
@@ -402,11 +380,21 @@ impl AgentLoop {
                 api_base: self.model_config.api_base.clone(),
             };
 
-            // Call provider plugin
-            let response: ChatResponse = self
-                .plugin_host
-                .call(&self.model_config.provider, "chat", &chat_request)
-                .map_err(|e| Error::Plugin(format!("provider call failed: {}", e)))?;
+            // Call provider via unified lambda_loop - handles HTTP call + response parsing internally
+            let chat_input = ChatInput {
+                request: chat_request.clone(),
+            };
+
+            let response: ChatResponse = lambda_call_typed(
+                &self.plugin_host,
+                Arc::clone(&self.http_executor),
+                &self.model_config.provider,
+                Action::Chat,
+                &chat_input,
+                &[],
+            )
+            .await
+            .map_err(|e| Error::Plugin(format!("provider call failed: {}", e)))?;
 
             if let Some(err) = response.error {
                 return Err(Error::Plugin(format!("provider error: {}", err)));
@@ -535,13 +523,10 @@ impl AgentLoop {
         self.send_to_channel(&msg.channel, &msg.chat_id, &final_response)
             .await?;
 
-        // Send typing stop indicator (best-effort, non-blocking)
-        self.set_typing(&msg.channel, &msg.chat_id, false).await;
-
         Ok(())
     }
 
-    /// Send a text message to a channel
+    /// Send a text message to a channel using lambda_function
     async fn send_to_channel(
         &self,
         channel_name: &str,
@@ -569,56 +554,25 @@ impl AgentLoop {
             content
         );
 
-        // Note: context_token is handled internally by the channel plugin
-        let send_params = SendTextParams {
+        let input = SendInput {
             token: token.to_string(),
             to_user_id: chat_id.to_string(),
             content: content.to_string(),
         };
 
-        let resp: SendResponse = self
-            .plugin_host
-            .call(channel_name, "send_text", &send_params)
-            .map_err(|e| Error::Plugin(format!("send_text failed: {}", e)))?;
+        // Use unified lambda_loop to handle all effects
+        let _: SendOutput = lambda_call_typed(
+            &self.plugin_host,
+            Arc::clone(&self.http_executor),
+            channel_name,
+            Action::FormatSend,
+            &input,
+            &[], // empty initial state for send
+        )
+        .await
+        .map_err(|e| Error::Plugin(format!("format_send failed: {}", e)))?;
 
-        if !resp.success {
-            tracing::warn!("send_text failed: {:?}", resp.error);
-        } else {
-            tracing::info!("message sent successfully to {}", chat_id);
-            tracing::debug!("sent message to {}", chat_id);
-        }
-
+        tracing::info!("message sent successfully to {}", chat_id);
         Ok(())
-    }
-
-    /// Set typing indicator on a channel.
-    /// typing=true means start, typing=false means stop.
-    /// This is best-effort - errors are ignored since not all plugins support it.
-    async fn set_typing(&self, channel_name: &str, chat_id: &str, typing: bool) {
-        let token = match self.channel_configs.get(channel_name) {
-            Some(cfg) => cfg.token.as_deref(),
-            None => {
-                tracing::debug!("set_typing: no token for channel {}", channel_name);
-                return;
-            }
-        };
-
-        let token = match token {
-            Some(t) => t,
-            None => return,
-        };
-
-        let params = SetTypingParams {
-            token: token.to_string(),
-            chat_id: chat_id.to_string(),
-            typing,
-        };
-
-        if let Err(e) =
-            self.plugin_host
-                .call::<SetTypingParams, ()>(channel_name, "set_typing", &params)
-        {
-            tracing::debug!("set_typing not supported for {}: {}", channel_name, e);
-        }
     }
 }

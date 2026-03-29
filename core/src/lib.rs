@@ -7,6 +7,9 @@ pub mod bus;
 pub mod commands;
 pub mod context;
 pub mod error;
+pub mod http_executor;
+pub mod lambda_loop;
+pub mod poller;
 pub mod session;
 
 pub use agent::AgentLoop;
@@ -14,6 +17,7 @@ pub use bus::MessageBus;
 pub use commands::{CommandRegistry, parse_command};
 pub use context::ContextBuilder;
 pub use error::Error;
+pub use http_executor::AsyncHttpExecutor;
 pub use session::{Message, Session, SessionManager};
 
 // Re-export config from mochiclaw-config

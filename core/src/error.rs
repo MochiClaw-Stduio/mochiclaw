@@ -13,6 +13,9 @@ pub enum Error {
     #[error("config error: {0}")]
     Config(String),
 
+    #[error("http error: {0}")]
+    Http(String),
+
     #[error("plugin error: {0}")]
     Plugin(String),
 

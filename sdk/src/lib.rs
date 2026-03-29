@@ -6,6 +6,7 @@ pub mod channel;
 pub mod command;
 pub mod error;
 pub mod host;
+pub mod lambda;
 pub mod message;
 pub mod provider;
 pub mod tool;
