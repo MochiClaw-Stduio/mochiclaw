@@ -20,15 +20,15 @@
 
 ```
 mochiclaw/
-├── mochiclaw-cli          # CLI 主程序
-├── mochiclaw-config       # 配置管理
-├── mochiclaw-core         # 核心运行时
-├── mochiclaw-plugin       # 插件管理
-├── mochiclaw-sdk          # 插件 SDK
+├── cli          # CLI 主程序
+├── config       # 配置管理
+├── core         # 核心运行时
+├── plugin       # 插件管理
+├── sdk          # 插件 SDK
 ├── plugins/               # 官方插件
-│   ├── mochi-openai   # OpenAI 兼容 Provider
-│   ├── mochi-fs       # 文件系统工具
-│   └── mochi-weixin   # 微信 Channel
+│   ├── openai   # OpenAI 兼容 Provider
+│   ├── fs       # 文件系统工具
+│   └── weixin   # 微信 Channel
 └── workspace/             # 工作目录
 ```
 

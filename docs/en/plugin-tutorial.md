@@ -19,14 +19,14 @@ rustup target add wasm32-unknown-unknown
 Create a new Rust project in the `plugins/` directory:
 
 ```bash
-cargo new --target wasm32-unknown-unknown plugins/mochiclaw-my-plugin
+cargo new --target wasm32-unknown-unknown plugins/mochi-my-plugin
 ```
 
 ## Step 2: Edit Cargo.toml
 
 ```toml
 [package]
-name = "mochiclaw-my-plugin"
+name = "mochi-my-plugin"
 version = "0.1.0"
 edition = "2021"
 
@@ -34,7 +34,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-mochiclaw-sdk = { path = "../../mochiclaw-sdk" }
+mochiclaw-sdk = { path = "../../sdk" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 extism-pdk = "1"
@@ -43,7 +43,7 @@ extism-pdk = "1"
 ## Step 3: Create manifest.toml
 
 ```toml
-name = "mochiclaw-my-plugin"
+name = "mochi-my-plugin"
 version = "0.1.0"
 description = "My custom tool plugin"
 

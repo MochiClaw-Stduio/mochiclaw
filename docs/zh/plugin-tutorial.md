@@ -26,7 +26,7 @@ cargo new --target wasm32-unknown-unknown plugins/mochiclaw-my-plugin
 
 ```toml
 [package]
-name = "mochiclaw-my-plugin"
+name = "mochi-my-plugin"
 version = "0.1.0"
 edition = "2021"
 
@@ -34,7 +34,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-mochiclaw-sdk = { path = "../../mochiclaw-sdk" }
+mochiclaw-sdk = { path = "../../sdk" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 extism-pdk = "1"
@@ -43,7 +43,7 @@ extism-pdk = "1"
 ## 步骤 3: 创建 manifest.toml
 
 ```toml
-name = "mochiclaw-my-plugin"
+name = "mochi-my-plugin"
 version = "0.1.0"
 description = "My custom tool plugin"
 

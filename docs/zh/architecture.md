@@ -111,9 +111,9 @@ Plugin Manifest → Extism Manifest
 
 | 文件 | 描述 |
 |------|------|
-| `mochiclaw-core/src/agent.rs` | AgentLoop 实现 |
-| `mochiclaw-core/src/bus.rs` | MessageBus |
-| `mochiclaw-core/src/session.rs` | SessionManager |
-| `mochiclaw-plugin/src/plugin.rs` | PluginHost |
-| `mochiclaw-plugin/src/host/mod.rs` | Host functions |
-| `mochiclaw-sdk/src/lib.rs` | 共享类型 |
+| `core/src/agent.rs` | AgentLoop 实现 |
+| `core/src/bus.rs` | MessageBus |
+| `core/src/session.rs` | SessionManager |
+| `plugin/src/plugin.rs` | PluginHost |
+| `plugin/src/host/mod.rs` | Host functions |
+| `sdk/src/lib.rs` | 共享类型 |

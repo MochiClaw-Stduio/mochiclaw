@@ -20,15 +20,15 @@ A plugin-based AI Agent runtime framework with WASM plugin isolation.
 
 ```
 mochiclaw/
-├── mochiclaw-cli          # CLI main program
-├── mochiclaw-config       # Configuration management
-├── mochiclaw-core         # Core runtime
-├── mochiclaw-plugin       # Plugin management
-├── mochiclaw-sdk          # Plugin SDK
+├── cli          # CLI main program
+├── config       # Configuration management
+├── core         # Core runtime
+├── plugin       # Plugin management
+├── sdk          # Plugin SDK
 ├── plugins/               # Official plugins
-│   ├── mochi-openai   # OpenAI-compatible Provider
-│   ├── mochi-fs       # Filesystem tools
-│   └── mochi-weixin   # WeChat Channel
+│   ├── openai   # OpenAI-compatible Provider
+│   ├── fs       # Filesystem tools
+│   └── weixin   # WeChat Channel
 └── workspace/             # Working directory
 ```
 

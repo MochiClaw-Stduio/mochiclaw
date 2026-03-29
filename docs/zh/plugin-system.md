@@ -143,7 +143,7 @@ plugin.call("function_name", &input)?
 ### HTTP
 
 ```rust
-// mochiclaw-sdk/src/host/http.rs
+// sdk/src/host/http.rs
 pub struct HttpClient {
     pub method: String,
     pub url: String,
@@ -161,7 +161,7 @@ pub struct HttpResponse {
 ### 文件系统
 
 ```rust
-// mochiclaw-sdk/src/host/fs.rs
+// sdk/src/host/fs.rs
 fn fs_read(path: &str) -> Result<String, KvError>
 fn fs_write(path: &str, content: &str) -> Result<(), KvError>
 fn fs_edit(path: &str, old: &str, new: &str) -> Result<(), KvError>
@@ -171,7 +171,7 @@ fn fs_list(path: &str) -> Result<Vec<String>, KvError>
 ### KV 存储
 
 ```rust
-// mochiclaw-sdk/src/host/kv.rs
+// sdk/src/host/kv.rs
 fn kv_set(key: &str, value: &[u8]) -> Result<(), KvError>
 fn kv_get(key: &str) -> Result<Vec<u8>, KvError>
 fn kv_remove(key: &str) -> Result<(), KvError>
@@ -182,7 +182,7 @@ fn kv_get_raw(plugin: &str, key: &str) -> Result<Vec<u8>, KvError>
 ### 随机数
 
 ```rust
-// mochiclaw-sdk/src/host/random.rs
+// sdk/src/host/random.rs
 fn rand_u32() -> u32
 fn rand_u64() -> u64
 fn rand_u32_bounded(max: u32) -> u32
