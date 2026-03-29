@@ -32,9 +32,8 @@ pub async fn start(config: Config, config_path: PathBuf) -> Result<()> {
         config.runtime.network.use_system_proxy,
         fallback_proxy
     );
-    let plugin_host = Arc::new(tokio::sync::Mutex::new(
-        PluginHost::new().with_http_proxy(fallback_proxy, config.runtime.network.use_system_proxy),
-    ));
+    let mut plugin_host =
+        PluginHost::new().with_http_proxy(fallback_proxy, config.runtime.network.use_system_proxy);
 
     // Discover and load plugins based on features
     for dir in &config.runtime.plugin_dirs {
@@ -49,7 +48,7 @@ pub async fn start(config: Config, config_path: PathBuf) -> Result<()> {
             }
         };
 
-        let mut host = plugin_host.lock().await;
+        let host = &mut plugin_host;
         for plugin in discovered {
             // Get per-plugin config if configured
             let plugin_config = config
@@ -72,7 +71,7 @@ pub async fn start(config: Config, config_path: PathBuf) -> Result<()> {
         }
     }
 
-    tracing::info!("loaded {} plugins", plugin_host.lock().await.plugin_count());
+    tracing::info!("loaded {} plugins", plugin_host.plugin_count());
 
     // Create message bus
     let bus = Arc::new(MessageBus::new());
@@ -83,7 +82,7 @@ pub async fn start(config: Config, config_path: PathBuf) -> Result<()> {
     // Release templates to workspace at startup
     ContextBuilder::new(workspace.clone()).release_templates();
 
-    let agent = AgentLoop::new(bus.clone(), plugin_host.clone(), &config, workspace);
+    let agent = AgentLoop::new(bus.clone(), Arc::new(plugin_host), &config, workspace);
 
     // Run agent
     let _agent_handle = tokio::spawn(async move {

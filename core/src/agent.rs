@@ -21,7 +21,7 @@ use tokio::time::{interval, timeout};
 
 pub struct AgentLoop {
     bus: Arc<MessageBus>,
-    plugin_host: Arc<tokio::sync::Mutex<PluginHost>>,
+    plugin_host: Arc<PluginHost>,
     model_config: ModelConfig,
     max_iterations: usize,
     /// Channel configurations for polling (channel_name -> config)
@@ -43,7 +43,7 @@ pub struct AgentLoop {
 impl AgentLoop {
     pub fn new(
         bus: Arc<MessageBus>,
-        plugin_host: Arc<tokio::sync::Mutex<PluginHost>>,
+        plugin_host: Arc<PluginHost>,
         config: &Config,
         workspace: PathBuf,
     ) -> Self {
@@ -105,10 +105,7 @@ impl AgentLoop {
     /// Discover and load tool definitions from all loaded tool plugins.
     /// Tool plugins are identified by having features.tool = true in their manifest.
     async fn load_tool_plugins(&self) {
-        let host = self.plugin_host.lock().await;
-        // Only query plugins that declared features.tool = true
-        let tool_plugin_names = host.tool_plugins();
-        drop(host);
+        let tool_plugin_names = self.plugin_host.tool_plugins();
 
         let mut tool_definitions = Vec::new();
         let mut tool_plugin_map: HashMap<String, String> = HashMap::new();
@@ -116,10 +113,10 @@ impl AgentLoop {
 
         for plugin_name in tool_plugin_names {
             // Try to call get_tools on this plugin
-            let tools_result: Result<String, _> = {
-                let host = self.plugin_host.lock().await;
-                host.call(&plugin_name, "get_tools", &())
-            };
+            let tools_result = self
+                .plugin_host
+                .call::<(), String>(&plugin_name, "get_tools", &())
+                .map_err(|e| Error::Plugin(e.to_string()));
 
             match tools_result {
                 Ok(tools_json) => {
@@ -240,63 +237,54 @@ impl AgentLoop {
             };
 
             // Call the channel plugin's poll function
-            let result: Result<PollResponse, _> = {
-                let host = self.plugin_host.lock().await;
-                match host.call::<PollParams, PollResponse>(channel_name, "poll", &poll_params) {
-                    Ok(resp) => Ok::<PollResponse, anyhow::Error>(resp),
-                    Err(e) => {
-                        tracing::warn!("poll call failed for {}: {}", channel_name, e);
-                        continue;
-                    }
-                }
+            let Ok(resp) = self.plugin_host.call::<PollParams, PollResponse>(
+                channel_name,
+                "poll",
+                &poll_params,
+            ) else {
+                tracing::warn!("poll call failed for {}", channel_name);
+                continue;
             };
 
-            match result {
-                Ok(resp) => {
-                    let buf_len = resp.get_updates_buf.len();
-                    if let Some(ref err) = resp.error {
-                        tracing::info!(
-                            "poll {}: {} messages (buf={}), debug: {}",
-                            channel_name,
-                            resp.messages.len(),
-                            buf_len,
-                            err
-                        );
-                    } else {
-                        tracing::debug!(
-                            "poll {}: {} messages (buf={})",
-                            channel_name,
-                            resp.messages.len(),
-                            buf_len
-                        );
-                    }
+            let buf_len = resp.get_updates_buf.len();
+            if let Some(ref err) = resp.error {
+                tracing::info!(
+                    "poll {}: {} messages (buf={}), debug: {}",
+                    channel_name,
+                    resp.messages.len(),
+                    buf_len,
+                    err
+                );
+            } else {
+                tracing::debug!(
+                    "poll {}: {} messages (buf={})",
+                    channel_name,
+                    resp.messages.len(),
+                    buf_len
+                );
+            }
 
-                    // Update poll state (just the get_updates_buf cursor)
-                    // Note: context_token is now handled internally by the channel plugin
-                    if !resp.get_updates_buf.is_empty() {
-                        let mut state = self.poll_state.lock().await;
-                        state.insert(channel_name.clone(), resp.get_updates_buf);
-                    }
+            // Update poll state (just the get_updates_buf cursor)
+            // Note: context_token is now handled internally by the channel plugin
+            if !resp.get_updates_buf.is_empty() {
+                let mut state = self.poll_state.lock().await;
+                state.insert(channel_name.clone(), resp.get_updates_buf);
+            }
 
-                    // Send each message to the bus
-                    for mut inbound in resp.messages {
-                        // Ensure channel is set correctly (plugin may not set it)
-                        inbound.channel = channel_name.clone();
+            // Send each message to the bus
+            for mut inbound in resp.messages {
+                // Ensure channel is set correctly (plugin may not set it)
+                inbound.channel = channel_name.clone();
 
-                        tracing::debug!(
-                            "received message from {} in chat {}: {}...",
-                            inbound.sender_id,
-                            inbound.chat_id,
-                            inbound.content.chars().take(50).collect::<String>()
-                        );
+                tracing::debug!(
+                    "received message from {} in chat {}: {}...",
+                    inbound.sender_id,
+                    inbound.chat_id,
+                    inbound.content.chars().take(50).collect::<String>()
+                );
 
-                        if let Err(e) = self.bus.send_inbound(inbound).await {
-                            tracing::error!("failed to send inbound: {}", e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::debug!("failed to parse poll response for {}: {}", channel_name, e);
+                if let Err(e) = self.bus.send_inbound(inbound).await {
+                    tracing::error!("failed to send inbound: {}", e);
                 }
             }
         }
@@ -415,11 +403,10 @@ impl AgentLoop {
             };
 
             // Call provider plugin
-            let response: ChatResponse = {
-                let host = self.plugin_host.lock().await;
-                host.call(&self.model_config.provider, "chat", &chat_request)
-                    .map_err(|e| Error::Plugin(format!("provider call failed: {}", e)))?
-            };
+            let response: ChatResponse = self
+                .plugin_host
+                .call(&self.model_config.provider, "chat", &chat_request)
+                .map_err(|e| Error::Plugin(format!("provider call failed: {}", e)))?;
 
             if let Some(err) = response.error {
                 return Err(Error::Plugin(format!("provider error: {}", err)));
@@ -490,11 +477,10 @@ impl AgentLoop {
                     plugin_name
                 );
 
-                let tool_response: ToolExecutionResponse = {
-                    let host = self.plugin_host.lock().await;
-                    host.call_tool(&plugin_name, tool_name, &tool_call.arguments)
-                        .map_err(|e| Error::Plugin(format!("tool call failed: {}", e)))?
-                };
+                let tool_response: ToolExecutionResponse = self
+                    .plugin_host
+                    .call_tool(&plugin_name, tool_name, &tool_call.arguments)
+                    .map_err(|e| Error::Plugin(format!("tool call failed: {}", e)))?;
 
                 // Format tool result as a message
                 let tool_result_content = if let Some(error) = tool_response.error {
@@ -590,8 +576,8 @@ impl AgentLoop {
             content: content.to_string(),
         };
 
-        let host = self.plugin_host.lock().await;
-        let resp: SendResponse = host
+        let resp: SendResponse = self
+            .plugin_host
             .call(channel_name, "send_text", &send_params)
             .map_err(|e| Error::Plugin(format!("send_text failed: {}", e)))?;
 
@@ -628,8 +614,10 @@ impl AgentLoop {
             typing,
         };
 
-        let host = self.plugin_host.lock().await;
-        if let Err(e) = host.call::<SetTypingParams, ()>(channel_name, "set_typing", &params) {
+        if let Err(e) =
+            self.plugin_host
+                .call::<SetTypingParams, ()>(channel_name, "set_typing", &params)
+        {
             tracing::debug!("set_typing not supported for {}: {}", channel_name, e);
         }
     }
