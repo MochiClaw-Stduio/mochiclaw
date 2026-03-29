@@ -125,19 +125,19 @@ fn do_something(args: &HashMap<String, serde_json::Value>) -> Result<String, Str
 ## 步骤 5: 构建
 
 ```bash
-cargo build --release --target wasm32-unknown-unknown -p mochiclaw-my-plugin
+cargo build --release --target wasm32-unknown-unknown -p mochi-my-plugin
 ```
 
-输出: `target/wasm32-unknown-unknown/release/mochiclaw_my_plugin.wasm`
+输出: `target/wasm32-unknown-unknown/release/mochi_my_plugin.wasm`
 
 ## 步骤 6: 部署
 
 复制 WASM 文件和 `manifest.toml` 到插件目录：
 
 ```bash
-cp target/wasm32-unknown-unknown/release/mochiclaw_my_plugin.wasm \
+cp target/wasm32-unknown-unknown/release/mochi_my_plugin.wasm \
    ./target/plugins/
-cp plugins/mochiclaw-my-plugin/manifest.toml \
+cp plugins/mochi-my-plugin/manifest.toml \
    ./target/plugins/
 ```
 

@@ -288,7 +288,7 @@ impl PluginHost {
     /// Load a discovered plugin with default config
     pub fn load_discovered(&mut self, plugin: DiscoveredPlugin) -> Result<(), Error> {
         self.load_plugin(
-            &plugin.name,
+            &plugin.manifest.name,
             &plugin.wasm_path,
             &plugin.manifest,
             &PluginConfig::default(),

@@ -26,9 +26,9 @@ mochiclaw/
 ├── mochiclaw-plugin       # 插件管理
 ├── mochiclaw-sdk          # 插件 SDK
 ├── plugins/               # 官方插件
-│   ├── mochiclaw-openai   # OpenAI 兼容 Provider
-│   ├── mochiclaw-fs       # 文件系统工具
-│   └── mochiclaw-weixin   # 微信 Channel
+│   ├── mochi-openai   # OpenAI 兼容 Provider
+│   ├── mochi-fs       # 文件系统工具
+│   └── mochi-weixin   # 微信 Channel
 └── workspace/             # 工作目录
 ```
 
@@ -66,7 +66,7 @@ plugin_dirs = ["./target/plugins"]
 
 [models.deepseek-chat]
 model = "deepseek-chat"
-provider = "mochiclaw-openai"
+provider = "mochi-openai"
 api_base = "https://api.deepseek.com/v1"
 api_key = "sk-your-key"
 ```
@@ -81,9 +81,9 @@ cargo run --release -p mochiclaw-cli
 
 | 插件 | 类型 | 说明 |
 |------|------|------|
-| mochiclaw-openai | Provider | OpenAI 兼容 API |
-| mochiclaw-fs | Tool | 文件系统操作 |
-| mochiclaw-weixin | Channel | 微信消息通道 |
+| mochi-openai | Provider | OpenAI 兼容 API |
+| mochi-fs | Tool | 文件系统操作 |
+| mochi-weixin | Channel | 微信消息通道 |
 
 ## 开发
 

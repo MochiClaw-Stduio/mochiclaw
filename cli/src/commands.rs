@@ -54,12 +54,12 @@ pub async fn start(config: Config, config_path: PathBuf) -> Result<()> {
             // Get per-plugin config if configured
             let plugin_config = config
                 .plugins
-                .get(&plugin.name)
+                .get(&plugin.manifest.name)
                 .cloned()
                 .unwrap_or_default();
 
             match host.load_plugin(
-                &plugin.name,
+                &plugin.manifest.name,
                 &plugin.wasm_path,
                 &plugin.manifest,
                 &plugin_config,
@@ -119,7 +119,7 @@ pub async fn onboard(config_path: PathBuf) -> Result<()> {
 /// Login to a channel plugin
 pub async fn login(plugin_name: &str, mut config: Config, config_path: PathBuf) -> Result<()> {
     // Find plugin paths
-    let wasm_name = plugin_name.replace("mochiclaw-", "mochiclaw_");
+    let wasm_name = plugin_name.replace("mochi-", "mochi_");
     let wasm_path =
         PathBuf::from("target/wasm32-unknown-unknown/release").join(format!("{}.wasm", wasm_name));
     let manifest_path = PathBuf::from("plugins")

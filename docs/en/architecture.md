@@ -73,9 +73,9 @@ Manages WASM plugin lifecycle:
 
 | Type | Interface | Example |
 |------|-----------|---------|
-| `provider` | `chat`, `chat_stream` | mochiclaw-openai |
-| `channel` | `poll`, `send_text`, `set_typing` | mochiclaw-weixin |
-| `tool` | `execute_tool`, `get_tools` | mochiclaw-fs |
+| `provider` | `chat`, `chat_stream` | mochi-openai |
+| `channel` | `poll`, `send_text`, `set_typing` | mochi-weixin |
+| `tool` | `execute_tool`, `get_tools` | mochi-fs |
 | `command` | `execute` | - |
 
 ## Data Flow

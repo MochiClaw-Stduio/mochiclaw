@@ -1,14 +1,14 @@
 [workspace]
 resolver = "2"
 members = [
-    "mochiclaw-sdk",
-    "mochiclaw-config",
-    "mochiclaw-plugin",
-    "mochiclaw-core",
-    "mochiclaw-cli",
-    "plugins/mochiclaw-weixin",
-    "plugins/mochiclaw-openai",
-    "plugins/mochiclaw-fs",
+    "sdk",
+    "config",
+    "plugin",
+    "core",
+    "cli",
+    "plugins/weixin",
+    "plugins/openai",
+    "plugins/fs",
     "plugin-tests/test-kv",
     "plugin-tests/test-random",
     "plugin-tests/test-http",

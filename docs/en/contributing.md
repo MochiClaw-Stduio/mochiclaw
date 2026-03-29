@@ -38,7 +38,7 @@ just build-native
 just build-plugin
 
 # Build specific plugin
-cargo build --release --target wasm32-unknown-unknown -p mochiclaw-openai
+cargo build --release --target wasm32-unknown-unknown -p mochi-openai
 ```
 
 ### Code Quality
@@ -65,9 +65,9 @@ just test
 | `mochiclaw-config` | Configuration structures |
 
 Official plugins under `plugins/`:
-- `mochiclaw-openai` - OpenAI-compatible LLM provider
-- `mochiclaw-fs` - Filesystem tools
-- `mochiclaw-weixin` - WeChat channel
+- `mochi-openai` - OpenAI-compatible LLM provider
+- `mochi-fs` - Filesystem tools
+- `mochi-weixin` - WeChat channel
 
 ## Writing Plugins
 

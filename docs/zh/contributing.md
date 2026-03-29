@@ -38,7 +38,7 @@ just build-native
 just build-plugin
 
 # 构建特定插件
-cargo build --release --target wasm32-unknown-unknown -p mochiclaw-openai
+cargo build --release --target wasm32-unknown-unknown -p mochi-openai
 ```
 
 ### 代码质量
@@ -65,9 +65,9 @@ just test
 | `mochiclaw-config` | 配置结构 |
 
 `plugins/` 下的官方插件：
-- `mochiclaw-openai` - OpenAI 兼容 LLM provider
-- `mochiclaw-fs` - 文件系统工具
-- `mochiclaw-weixin` - 微信 channel
+- `mochi-openai` - OpenAI 兼容 LLM provider
+- `mochi-fs` - 文件系统工具
+- `mochi-weixin` - 微信 channel
 
 ## 编写插件
 

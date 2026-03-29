@@ -1,5 +1,5 @@
 [package]
-name = "mochiclaw-weixin"
+name = "mochi-weixin"
 version.workspace = true
 edition.workspace = true
 description = "Weixin channel plugin for Mochiclaw"
@@ -12,7 +12,7 @@ extism-pdk.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 rmp-serde.workspace = true
-mochiclaw-sdk = { path = "../../mochiclaw-sdk" }
+mochiclaw-sdk = { path = "../../sdk" }
 base64.workspace = true
 hex = "0.4"
 aes = "0.8"

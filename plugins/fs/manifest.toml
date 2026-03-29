@@ -1,4 +1,4 @@
-name = "mochiclaw-fs"
+name = "mochi-fs"
 version = "0.1.0"
 description = "Filesystem tools: read_file, write_file, edit_file, list_dir"
 

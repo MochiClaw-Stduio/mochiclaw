@@ -29,23 +29,23 @@ max_age_days = 30
 [runtime.network]
 use_system_proxy = false
 
-[plugins.mochiclaw-openai]
+[plugins.mochi-openai]
 proxy_url = "http://127.0.0.1:7890"
 
-[channels.mochiclaw-weixin]
+[channels.mochi-weixin]
 enabled = true
 token = "your-channel-token"
 extra = { base_url = "https://example.com" }
 
 [models.gpt-4]
 model = "gpt-4"
-provider = "mochiclaw-openai"
+provider = "mochi-openai"
 api_base = "https://api.openai.com/v1"
 api_key = "sk-..."
 
 [models.deepseek-chat]
 model = "deepseek-chat"
-provider = "mochiclaw-openai"
+provider = "mochi-openai"
 api_base = "https://api.deepseek.com/v1"
 api_key = "sk-..."
 ```
