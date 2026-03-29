@@ -1,7 +1,7 @@
 //! Plugin manifest schema
 
 use crate::error::Error as PluginError;
-use mochiclaw_config::plugin::CapabilitiesOverride;
+use mochiclaw_config::LambdaCapabilitiesOverride;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
@@ -59,7 +59,7 @@ impl Capabilities {
     /// - Boolean scalars (enabled): user override takes precedence (if Some)
     /// - String scalars (allowed_root): user override takes precedence (if Some)
     /// - Lists: user items are appended to manifest's list
-    pub fn merge_with(&self, overrides: &CapabilitiesOverride) -> Self {
+    pub fn merge_with(&self, overrides: &LambdaCapabilitiesOverride) -> Self {
         // Merge network capabilities
         let network_enabled = overrides
             .network
@@ -233,8 +233,8 @@ impl std::error::Error for ManifestError {}
 #[cfg(test)]
 mod tests {
     use crate::manifest::{Capabilities, FsCapabilities, NetworkCapabilities};
-    use mochiclaw_config::plugin::{
-        CapabilitiesOverride, FsCapabilitiesOverride, NetworkCapabilitiesOverride,
+    use mochiclaw_config::lambda::{
+        LambdaCapabilitiesOverride, FsCapabilitiesOverride, NetworkCapabilitiesOverride,
     };
 
     fn default_capabilities() -> Capabilities {
@@ -262,7 +262,7 @@ mod tests {
     fn test_merge_network_enabled_true_to_false() {
         // User disables network even though manifest has it enabled
         let manifest = default_capabilities();
-        let overrides = CapabilitiesOverride {
+        let overrides = LambdaCapabilitiesOverride {
             network: Some(NetworkCapabilitiesOverride {
                 enabled: Some(false),
                 allowed_hosts: None,
@@ -291,7 +291,7 @@ mod tests {
             fs: Default::default(),
             allowed_kv_read: vec![],
         };
-        let overrides = CapabilitiesOverride {
+        let overrides = LambdaCapabilitiesOverride {
             network: Some(NetworkCapabilitiesOverride {
                 enabled: Some(true),
                 allowed_hosts: Some(vec!["user.api.com".to_string()]),
@@ -311,7 +311,7 @@ mod tests {
     fn test_merge_network_allowed_hosts_append() {
         // User appends additional allowed hosts
         let manifest = default_capabilities();
-        let overrides = CapabilitiesOverride {
+        let overrides = LambdaCapabilitiesOverride {
             network: Some(NetworkCapabilitiesOverride {
                 enabled: None,
                 allowed_hosts: Some(vec![
@@ -337,7 +337,7 @@ mod tests {
     fn test_merge_network_allowed_hosts_empty_append() {
         // User appends empty list - should not change
         let manifest = default_capabilities();
-        let overrides = CapabilitiesOverride {
+        let overrides = LambdaCapabilitiesOverride {
             network: Some(NetworkCapabilitiesOverride {
                 enabled: None,
                 allowed_hosts: Some(vec![]),
@@ -356,7 +356,7 @@ mod tests {
     fn test_merge_network_denied_hosts_append() {
         // User appends to denied_hosts
         let manifest = default_capabilities();
-        let overrides = CapabilitiesOverride {
+        let overrides = LambdaCapabilitiesOverride {
             network: Some(NetworkCapabilitiesOverride {
                 enabled: None,
                 allowed_hosts: None,
@@ -378,7 +378,7 @@ mod tests {
     fn test_merge_network_denied_hosts_empty_append() {
         // User appends empty denied_hosts - should not change
         let manifest = default_capabilities();
-        let overrides = CapabilitiesOverride {
+        let overrides = LambdaCapabilitiesOverride {
             network: Some(NetworkCapabilitiesOverride {
                 enabled: None,
                 allowed_hosts: None,
@@ -399,7 +399,7 @@ mod tests {
     fn test_merge_fs_enabled_true_to_false() {
         // User disables fs
         let manifest = default_capabilities();
-        let overrides = CapabilitiesOverride {
+        let overrides = LambdaCapabilitiesOverride {
             network: None,
             fs: Some(FsCapabilitiesOverride {
                 enabled: Some(false),
@@ -432,7 +432,7 @@ mod tests {
             },
             allowed_kv_read: vec![],
         };
-        let overrides = CapabilitiesOverride {
+        let overrides = LambdaCapabilitiesOverride {
             network: None,
             fs: Some(FsCapabilitiesOverride {
                 enabled: Some(true),
@@ -455,7 +455,7 @@ mod tests {
     fn test_merge_fs_allowed_root_override() {
         // User overrides allowed_root
         let manifest = default_capabilities();
-        let overrides = CapabilitiesOverride {
+        let overrides = LambdaCapabilitiesOverride {
             network: None,
             fs: Some(FsCapabilitiesOverride {
                 enabled: None,
@@ -477,7 +477,7 @@ mod tests {
     fn test_merge_fs_whitelists_append() {
         // User appends to read and write whitelists
         let manifest = default_capabilities();
-        let overrides = CapabilitiesOverride {
+        let overrides = LambdaCapabilitiesOverride {
             network: None,
             fs: Some(FsCapabilitiesOverride {
                 enabled: None,
@@ -506,7 +506,7 @@ mod tests {
     fn test_merge_fs_blacklists_append() {
         // User appends to read and write blacklists
         let manifest = default_capabilities();
-        let overrides = CapabilitiesOverride {
+        let overrides = LambdaCapabilitiesOverride {
             network: None,
             fs: Some(FsCapabilitiesOverride {
                 enabled: None,
@@ -531,7 +531,7 @@ mod tests {
     fn test_merge_allowed_kv_read_append() {
         // User appends additional KV read access
         let manifest = default_capabilities();
-        let overrides = CapabilitiesOverride {
+        let overrides = LambdaCapabilitiesOverride {
             network: None,
             fs: None,
             allowed_kv_read: Some(vec!["plugin-b".to_string(), "plugin-c".to_string()]),
@@ -549,7 +549,7 @@ mod tests {
     fn test_merge_allowed_kv_read_empty_append() {
         // User appends empty list
         let manifest = default_capabilities();
-        let overrides = CapabilitiesOverride {
+        let overrides = LambdaCapabilitiesOverride {
             network: None,
             fs: None,
             allowed_kv_read: Some(vec![]),
@@ -566,7 +566,7 @@ mod tests {
     fn test_merge_all_fields_at_once() {
         // User overrides everything at once
         let manifest = default_capabilities();
-        let overrides = CapabilitiesOverride {
+        let overrides = LambdaCapabilitiesOverride {
             network: Some(NetworkCapabilitiesOverride {
                 enabled: Some(false),
                 allowed_hosts: Some(vec!["new.host.com".to_string()]),
@@ -618,7 +618,7 @@ mod tests {
     fn test_merge_empty_overrides_keeps_manifest() {
         // Empty overrides should keep all manifest values
         let manifest = default_capabilities();
-        let overrides = CapabilitiesOverride::default();
+        let overrides = LambdaCapabilitiesOverride::default();
 
         let result = manifest.merge_with(&overrides);
 
@@ -637,7 +637,7 @@ mod tests {
     fn test_merge_partial_network_override() {
         // User only overrides network enabled, nothing else
         let manifest = default_capabilities();
-        let overrides = CapabilitiesOverride {
+        let overrides = LambdaCapabilitiesOverride {
             network: Some(NetworkCapabilitiesOverride {
                 enabled: Some(false),
                 allowed_hosts: None,
@@ -666,7 +666,7 @@ mod tests {
     fn test_merge_partial_fs_override() {
         // User only overrides fs allowed_root, no other fs fields
         let manifest = default_capabilities();
-        let overrides = CapabilitiesOverride {
+        let overrides = LambdaCapabilitiesOverride {
             network: None,
             fs: Some(FsCapabilitiesOverride {
                 enabled: None,
@@ -704,7 +704,7 @@ mod tests {
             fs: Default::default(),
             allowed_kv_read: vec![],
         };
-        let overrides = CapabilitiesOverride {
+        let overrides = LambdaCapabilitiesOverride {
             network: Some(NetworkCapabilitiesOverride {
                 enabled: Some(true),
                 allowed_hosts: Some(vec!["*.user-specified.com".to_string()]),
@@ -735,7 +735,7 @@ mod tests {
             },
             allowed_kv_read: vec![],
         };
-        let overrides = CapabilitiesOverride {
+        let overrides = LambdaCapabilitiesOverride {
             network: None,
             fs: Some(FsCapabilitiesOverride {
                 enabled: Some(true),

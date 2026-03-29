@@ -11,7 +11,7 @@ use crate::host::kv::PluginKV;
 use crate::manifest::PluginManifest;
 use extism::{CompiledPlugin, Manifest, Plugin, PluginBuilder, Pool, PoolBuilder, Wasm};
 use extism_convert::{FromBytesOwned, ToBytes};
-use mochiclaw_config::PluginConfig;
+use mochiclaw_config::LambdaConfig;
 use mochiclaw_sdk::tool::{ToolExecutionRequest, ToolExecutionResponse};
 use std::collections::HashMap;
 use std::path::Path;
@@ -77,7 +77,7 @@ impl PluginHost {
         name: &str,
         wasm_path: &Path,
         manifest: &PluginManifest,
-        config: &PluginConfig,
+        config: &LambdaConfig,
     ) -> Result<(), Error> {
         if self.compiled.contains_key(name) {
             return Err(Error::Plugin(format!("plugin '{}' already loaded", name)));
@@ -294,7 +294,7 @@ impl PluginHost {
             &plugin.manifest.name,
             &plugin.wasm_path,
             &plugin.manifest,
-            &PluginConfig::default(),
+            &LambdaConfig::default(),
         )
     }
 

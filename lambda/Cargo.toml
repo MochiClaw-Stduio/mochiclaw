@@ -1,8 +1,8 @@
 [package]
-name = "mochiclaw-plugin"
+name = "mochiclaw-lambda"
 version.workspace = true
 edition.workspace = true
-description = "Mochiclaw Plugin - Plugin host, manifest, and registry"
+description = "Mochiclaw Lambda - Plugin host, manifest, and registry"
 
 [dependencies]
 serde = { workspace = true, features = ["derive"] }

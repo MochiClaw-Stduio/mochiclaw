@@ -5,7 +5,7 @@ use crate::error::Error;
 use crate::http_executor::AsyncHttpExecutor;
 use crate::lambda_loop::lambda_call_typed;
 use mochiclaw_config::ChannelConfig;
-use mochiclaw_plugin::PluginHost;
+use mochiclaw_lambda::PluginHost;
 use mochiclaw_sdk::lambda::{Action, DigestOutput, PreparePollInput};
 use std::collections::HashMap;
 use std::sync::Arc;

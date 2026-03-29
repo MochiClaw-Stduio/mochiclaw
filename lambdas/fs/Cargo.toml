@@ -11,4 +11,5 @@ crate-type = ["cdylib"]
 extism-pdk.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+rmp-serde.workspace = true
 mochiclaw-sdk = { path = "../../sdk" }

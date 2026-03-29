@@ -20,7 +20,7 @@ reqwest.workspace = true
 futures = "0.3"
 file_type = "0.8"
 mochiclaw-sdk = { path = "../sdk" }
-mochiclaw-plugin = { path = "../plugin" }
+mochiclaw-lambda = { path = "../lambda" }
 mochiclaw-config = { path = "../config" }
 
 [dev-dependencies]

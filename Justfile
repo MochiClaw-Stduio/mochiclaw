@@ -12,7 +12,7 @@ build-test-plugin:
 
 # Test native crates (depends on test plugin WASM being built)
 test-native: build-test-plugin
-    cargo test -p mochiclaw-sdk -p mochiclaw-plugin -p mochiclaw-core
+    cargo test -p mochiclaw-sdk -p mochiclaw-lambda -p mochiclaw-core
 
 # Test everything
 test: test-native
@@ -22,7 +22,7 @@ setup-plugins:
     #!/bin/bash
     set -e
     mkdir -p ./target/plugins
-    for plugin_dir in plugins/*/; do
+    for plugin_dir in lambdas/*/; do
         if [ ! -f "$plugin_dir/manifest.toml" ]; then
             continue
         fi

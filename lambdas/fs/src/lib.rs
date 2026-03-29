@@ -1,28 +1,59 @@
 //! Filesystem Tool Plugin
 //!
 //! Provides read_file, write_file, edit_file, and list_dir tools.
+//! Uses lambda_function as the unified entry point.
 
 use std::collections::HashMap;
 
 use mochiclaw_sdk::host::fs;
-use mochiclaw_sdk::tool::{Tool, ToolExecutionRequest, ToolExecutionResponse};
-use mochiclaw_sdk::{FnResult, config, plugin_fn};
+use mochiclaw_sdk::lambda::{Action, ExecuteToolInput, LambdaInput, LambdaOutput};
+use mochiclaw_sdk::tool::{Tool, ToolExecutionResponse};
+use mochiclaw_sdk::{FnResult, ToBytes, config, plugin_fn};
 
-/// Return the list of tools provided by this plugin
+// ============================================================================
+// Lambda Function Entry Point
+// ============================================================================
+
+/// Unified lambda entry point for tool operations
 #[plugin_fn]
-pub fn get_tools() -> FnResult<String> {
+pub fn lambda_function(params: LambdaInput) -> FnResult<LambdaOutput> {
+    match params.action {
+        Action::GetTools => handle_get_tools(),
+        Action::ExecuteTool => handle_execute_tool(params),
+        _ => Ok(LambdaOutput {
+            effects: vec![],
+            result: ToolExecutionResponse {
+                result: String::new(),
+                error: Some("fs plugin only supports GetTools and ExecuteTool".to_string()),
+            }
+            .to_bytes()?,
+            new_state: Vec::new(),
+        }),
+    }
+}
+
+// ============================================================================
+// Tool Handlers
+// ============================================================================
+
+fn handle_get_tools() -> FnResult<LambdaOutput> {
     let tools = vec![
         make_read_file_tool(),
         make_write_file_tool(),
         make_edit_file_tool(),
         make_list_dir_tool(),
     ];
-    Ok(serde_json::to_string(&tools).unwrap())
+    let tools_json = serde_json::to_string(&tools).unwrap();
+    Ok(LambdaOutput {
+        effects: vec![],
+        result: rmp_serde::to_vec(&tools_json)?,
+        new_state: Vec::new(),
+    })
 }
 
-/// Execute a tool by name with the provided arguments
-#[plugin_fn]
-pub fn execute_tool(request: ToolExecutionRequest) -> FnResult<ToolExecutionResponse> {
+fn handle_execute_tool(params: LambdaInput) -> FnResult<LambdaOutput> {
+    let input: ExecuteToolInput = rmp_serde::from_slice(&params.payload)?;
+
     // Get workspace from config (injected by host)
     let workspace = match config::get("workspace") {
         Ok(Some(w)) => w,
@@ -30,32 +61,32 @@ pub fn execute_tool(request: ToolExecutionRequest) -> FnResult<ToolExecutionResp
         Err(_) => ".".to_string(),
     };
 
-    let result = match request.name.as_str() {
+    let result = match input.name.as_str() {
         "read_file" => {
-            let path = match get_string_arg(&request, "path") {
+            let path = match get_string_arg(&input.arguments, "path") {
                 Ok(p) => p,
-                Err(e) => return Ok(error_response(e)),
+                Err(e) => return error_output(e),
             };
-            let offset = request
+            let offset = input
                 .arguments
                 .get("offset")
-                .and_then(|v| v.as_u64())
+                .and_then(|v: &serde_json::Value| v.as_u64())
                 .unwrap_or(1);
-            let limit = request
+            let limit = input
                 .arguments
                 .get("limit")
-                .and_then(|v| v.as_u64())
+                .and_then(|v: &serde_json::Value| v.as_u64())
                 .unwrap_or(2000);
             fs::fs_read(&path, &workspace, offset, limit)
         }
         "write_file" => {
-            let path = match get_string_arg(&request, "path") {
+            let path = match get_string_arg(&input.arguments, "path") {
                 Ok(p) => p,
-                Err(e) => return Ok(error_response(e)),
+                Err(e) => return error_output(e),
             };
-            let content = match get_string_arg(&request, "content") {
+            let content = match get_string_arg(&input.arguments, "content") {
                 Ok(c) => c,
-                Err(e) => return Ok(error_response(e)),
+                Err(e) => return error_output(e),
             };
             match fs::fs_write(&path, &workspace, &content) {
                 Ok(true) => Ok("File written successfully".to_string()),
@@ -64,62 +95,74 @@ pub fn execute_tool(request: ToolExecutionRequest) -> FnResult<ToolExecutionResp
             }
         }
         "edit_file" => {
-            let path = match get_string_arg(&request, "path") {
+            let path = match get_string_arg(&input.arguments, "path") {
                 Ok(p) => p,
-                Err(e) => return Ok(error_response(e)),
+                Err(e) => return error_output(e),
             };
-            let old_text = match get_string_arg(&request, "old_text") {
+            let old_text = match get_string_arg(&input.arguments, "old_text") {
                 Ok(t) => t,
-                Err(e) => return Ok(error_response(e)),
+                Err(e) => return error_output(e),
             };
-            let new_text = match get_string_arg(&request, "new_text") {
+            let new_text = match get_string_arg(&input.arguments, "new_text") {
                 Ok(t) => t,
-                Err(e) => return Ok(error_response(e)),
+                Err(e) => return error_output(e),
             };
-            let replace_all = request
+            let replace_all = input
                 .arguments
                 .get("replace_all")
-                .and_then(|v| v.as_bool())
+                .and_then(|v: &serde_json::Value| v.as_bool())
                 .unwrap_or(false);
             fs::fs_edit(&path, &workspace, &old_text, &new_text, replace_all)
         }
         "list_dir" => {
-            let path = match get_string_arg(&request, "path") {
+            let path = match get_string_arg(&input.arguments, "path") {
                 Ok(p) => p,
-                Err(e) => return Ok(error_response(e)),
+                Err(e) => return error_output(e),
             };
-            let recursive = request
+            let recursive = input
                 .arguments
                 .get("recursive")
-                .and_then(|v| v.as_bool())
+                .and_then(|v: &serde_json::Value| v.as_bool())
                 .unwrap_or(false);
-            let max_entries = request
+            let max_entries = input
                 .arguments
                 .get("max_entries")
-                .and_then(|v| v.as_u64())
+                .and_then(|v: &serde_json::Value| v.as_u64())
                 .unwrap_or(200);
             fs::fs_list(&path, &workspace, recursive, max_entries)
         }
         _ => Err(format!(
             "Unknown tool: '{}'. Available tools: read_file, write_file, edit_file, list_dir",
-            request.name
+            input.name
         )),
     };
 
     match result {
-        Ok(result_str) => Ok(ToolExecutionResponse {
-            result: result_str,
-            error: None,
-        }),
-        Err(err_str) => Ok(error_response(err_str)),
+        Ok(result_str) => {
+            let response = ToolExecutionResponse {
+                result: result_str,
+                error: None,
+            };
+            Ok(LambdaOutput {
+                effects: vec![],
+                result: response.to_bytes()?,
+                new_state: Vec::new(),
+            })
+        }
+        Err(err_str) => error_output(err_str),
     }
 }
 
-fn error_response(message: String) -> ToolExecutionResponse {
-    ToolExecutionResponse {
+fn error_output(message: String) -> FnResult<LambdaOutput> {
+    let response = ToolExecutionResponse {
         result: String::new(),
         error: Some(message),
-    }
+    };
+    Ok(LambdaOutput {
+        effects: vec![],
+        result: response.to_bytes()?,
+        new_state: Vec::new(),
+    })
 }
 
 // ============================================================================
@@ -257,9 +300,11 @@ fn make_list_dir_tool() -> Tool {
 // Helper functions
 // ============================================================================
 
-fn get_string_arg(request: &ToolExecutionRequest, key: &str) -> Result<String, String> {
-    request
-        .arguments
+fn get_string_arg(
+    arguments: &HashMap<String, serde_json::Value>,
+    key: &str,
+) -> Result<String, String> {
+    arguments
         .get(key)
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())

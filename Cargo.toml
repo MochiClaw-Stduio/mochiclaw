@@ -3,15 +3,15 @@ resolver = "2"
 members = [
     "sdk",
     "config",
-    "plugin",
+    "lambda",
     "core",
     "cli",
-    "plugins/weixin",
-    "plugins/openai",
-    "plugins/fs",
-    "plugin-tests/test-kv",
-    "plugin-tests/test-random",
-    "plugin-tests/test-fs",
+    "lambdas/weixin",
+    "lambdas/openai",
+    "lambdas/fs",
+    "lambda-tests/test-kv",
+    "lambda-tests/test-random",
+    "lambda-tests/test-fs",
 ]
 
 [workspace.package]

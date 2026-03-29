@@ -22,11 +22,14 @@ pub enum Action {
 
     // Provider 动作（OpenAI 等）
     Chat,
-    DigestChat,
 
     // Login 动作（登录流程）
     Login,
     CheckLogin,
+
+    // Tool 动作（工具执行）
+    GetTools,
+    ExecuteTool,
 }
 
 impl Action {
@@ -36,9 +39,10 @@ impl Action {
             Action::FormatSend => "format_send",
             Action::SetTyping => "set_typing",
             Action::Chat => "chat",
-            Action::DigestChat => "digest_chat",
             Action::Login => "login",
             Action::CheckLogin => "check_login",
+            Action::GetTools => "get_tools",
+            Action::ExecuteTool => "execute_tool",
         }
     }
 }
@@ -249,3 +253,28 @@ pub struct CheckLoginOutput {
     #[serde(default)]
     pub error: Option<String>,
 }
+
+// ============================================================================
+// Tool 动作的 Payload 类型
+// ============================================================================
+
+/// execute_tool 的输入参数
+#[derive(Serialize, Deserialize, Debug, Clone, FromBytes, ToBytes)]
+#[encoding(Msgpack)]
+pub struct ExecuteToolInput {
+    pub name: String,
+    pub arguments: std::collections::HashMap<String, serde_json::Value>,
+}
+
+/// execute_tool 的输出结果
+#[derive(Serialize, Deserialize, Debug, Clone, FromBytes, ToBytes)]
+#[encoding(Msgpack)]
+pub struct ExecuteToolOutput {
+    pub result: String,
+    pub error: Option<String>,
+}
+
+/// get_tools 的输入参数（空）
+#[derive(Serialize, Deserialize, Debug, Clone, FromBytes, ToBytes)]
+#[encoding(Msgpack)]
+pub struct GetToolsInput {}

@@ -1,6 +1,6 @@
-//! Mochiclaw Plugin
+//! Mochiclaw Lambda
 //!
-//! Plugin host, manifest, and registry for managing extism WASM plugins.
+//! Lambda host, manifest, and registry for managing extism WASM plugins.
 
 pub mod context;
 pub mod discover;

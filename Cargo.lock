@@ -1737,6 +1737,7 @@ version = "0.1.0"
 dependencies = [
  "extism-pdk",
  "mochiclaw-sdk",
+ "rmp-serde",
  "serde",
  "serde_json",
 ]
@@ -1809,7 +1810,7 @@ dependencies = [
  "file_type",
  "futures",
  "mochiclaw-config",
- "mochiclaw-plugin",
+ "mochiclaw-lambda",
  "mochiclaw-sdk",
  "rand",
  "reqwest",
@@ -1825,7 +1826,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mochiclaw-plugin"
+name = "mochiclaw-lambda"
 version = "0.1.0"
 dependencies = [
  "anyhow",

@@ -8,8 +8,10 @@ use crate::http_executor::AsyncHttpExecutor;
 use crate::lambda_loop::lambda_call_typed;
 use crate::session::SessionManager;
 use mochiclaw_config::{ChannelConfig, Config, ModelConfig};
-use mochiclaw_plugin::PluginHost;
-use mochiclaw_sdk::lambda::{Action, ChatInput, SendInput, SendOutput, SetTypingInput};
+use mochiclaw_lambda::PluginHost;
+use mochiclaw_sdk::lambda::{
+    Action, ChatInput, ExecuteToolInput, GetToolsInput, SendInput, SendOutput, SetTypingInput,
+};
 use mochiclaw_sdk::message::InboundMessage;
 use mochiclaw_sdk::provider::{ChatRequest, ChatResponse, Message, MessageRole};
 use mochiclaw_sdk::tool::{Tool, ToolExecutionResponse};
@@ -131,11 +133,17 @@ impl AgentLoop {
         let mut loaded_plugin_count = 0;
 
         for plugin_name in tool_plugin_names {
-            // Try to call get_tools on this plugin
-            let tools_result = self
-                .plugin_host
-                .call::<(), String>(&plugin_name, "get_tools", &())
-                .map_err(|e| Error::Plugin(e.to_string()));
+            // Use lambda_call_typed to call GetTools action
+            let tools_result: Result<String, Error> = lambda_call_typed(
+                &self.plugin_host,
+                Arc::clone(&self.http_executor),
+                &plugin_name,
+                Action::GetTools,
+                &GetToolsInput {},
+                &[],
+            )
+            .await
+            .map_err(|e| Error::Plugin(e.to_string()));
 
             match tools_result {
                 Ok(tools_json) => {
@@ -163,9 +171,9 @@ impl AgentLoop {
                     }
                 }
                 Err(e) => {
-                    // Tool plugin but get_tools failed - this is a real error
+                    // Tool plugin but GetTools failed - this is a real error
                     tracing::warn!(
-                        "tool plugin '{}' failed to provide tools (get_tools failed): {}",
+                        "tool plugin '{}' failed to provide tools (GetTools failed): {}",
                         plugin_name,
                         e
                     );
@@ -458,17 +466,28 @@ impl AgentLoop {
                     }
                 };
 
-                // Execute the tool
+                // Execute the tool via lambda_call_typed
                 tracing::debug!(
                     "executing tool '{}' via plugin '{}'",
                     tool_name,
                     plugin_name
                 );
 
-                let tool_response: ToolExecutionResponse = self
-                    .plugin_host
-                    .call_tool(&plugin_name, tool_name, &tool_call.arguments)
-                    .map_err(|e| Error::Plugin(format!("tool call failed: {}", e)))?;
+                let tool_input = ExecuteToolInput {
+                    name: tool_name.clone(),
+                    arguments: tool_call.arguments.clone(),
+                };
+
+                let tool_response: ToolExecutionResponse = lambda_call_typed(
+                    &self.plugin_host,
+                    Arc::clone(&self.http_executor),
+                    &plugin_name,
+                    Action::ExecuteTool,
+                    &tool_input,
+                    &[],
+                )
+                .await
+                .map_err(|e| Error::Plugin(format!("tool call failed: {}", e)))?;
 
                 // Format tool result as a message
                 let tool_result_content = if let Some(error) = tool_response.error {

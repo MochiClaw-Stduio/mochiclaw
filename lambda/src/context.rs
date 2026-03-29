@@ -4,7 +4,7 @@
 //! and config for each loaded plugin.
 
 use crate::manifest::PluginManifest;
-use mochiclaw_config::PluginConfig;
+use mochiclaw_config::LambdaConfig;
 
 /// Complete runtime context for a plugin
 #[derive(Debug, Clone)]
@@ -12,14 +12,14 @@ pub struct PluginContext {
     /// Plugin manifest (with capabilities merged from config overrides)
     pub manifest: PluginManifest,
     /// Plugin configuration
-    pub config: PluginConfig,
+    pub config: LambdaConfig,
     /// Whether to use system proxy when proxy_url is not set
     pub use_system_proxy: bool,
 }
 
 impl PluginContext {
     /// Create a new PluginContext
-    pub fn new(manifest: PluginManifest, config: PluginConfig, use_system_proxy: bool) -> Self {
+    pub fn new(manifest: PluginManifest, config: LambdaConfig, use_system_proxy: bool) -> Self {
         Self {
             manifest,
             config,

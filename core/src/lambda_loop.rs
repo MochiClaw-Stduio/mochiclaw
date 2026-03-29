@@ -8,7 +8,7 @@
 
 use crate::error::Error;
 use crate::http_executor::AsyncHttpExecutor;
-use mochiclaw_plugin::PluginHost;
+use mochiclaw_lambda::PluginHost;
 use mochiclaw_sdk::lambda::{Action, EffectResult, LambdaInput, LambdaOutput};
 use std::sync::Arc;
 

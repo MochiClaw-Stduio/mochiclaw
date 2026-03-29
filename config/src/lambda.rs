@@ -1,27 +1,28 @@
-//! Plugin configuration
+//! Lambda configuration
 
 use serde::Deserialize;
 use serde::Serialize;
 
-/// Plugin configuration for all plugins (公共配置)
+/// Lambda configuration for all lambdas (公共配置)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PluginConfig {
+#[serde(rename = "plugins")]
+pub struct LambdaConfig {
     #[serde(default = "default_enabled")]
     pub enabled: bool,
-    /// Per-plugin HTTP proxy URL (overrides global HTTP_PROXY env var)
+    /// Per-lambda HTTP proxy URL (overrides global HTTP_PROXY env var)
     #[serde(default)]
     pub proxy_url: Option<String>,
     /// Capability overrides - merged with manifest capabilities
     /// User config takes precedence for scalars, lists are merged (user items appended)
     #[serde(default)]
-    pub capabilities: Option<CapabilitiesOverride>,
+    pub capabilities: Option<LambdaCapabilitiesOverride>,
 }
 
 fn default_enabled() -> bool {
     true
 }
 
-impl Default for PluginConfig {
+impl Default for LambdaConfig {
     fn default() -> Self {
         Self {
             enabled: true,
@@ -33,7 +34,7 @@ impl Default for PluginConfig {
 
 /// User overrides for manifest capabilities
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct CapabilitiesOverride {
+pub struct LambdaCapabilitiesOverride {
     #[serde(default)]
     pub network: Option<NetworkCapabilitiesOverride>,
     #[serde(default)]

@@ -4,7 +4,7 @@
 //! 执行时会应用插件的权限配置（allowed_hosts、denied_hosts）和代理设置
 
 use crate::error::Error;
-use mochiclaw_plugin::PluginHost;
+use mochiclaw_lambda::PluginHost;
 use mochiclaw_sdk::lambda::{Effect, EffectResult, HttpEffect};
 use std::sync::Arc;
 
