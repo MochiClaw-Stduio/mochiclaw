@@ -165,34 +165,37 @@ struct HttpEffect {
 }
 ```
 
-### Effect 流程
+### Effect 流程（重放机制）
 
 ```
-Lambda                              Host                            外部
+Lambda (with Context)              Host                            外部
   │                                   │                                │
-  │ lambda_function(LambdaInput)      │                                │
+  │ lambda_main(LambdaInput)          │                                │
   │◄──────────────────────────────────│                                │
   │                                   │                                │
-  │ LambdaOutput {                    │                                │
-  │   effects: [HttpEffect {...}],    │                                │
-  │   result: Vec::new()              │                                │
+  │ ctx.http() -> Suspend            │                                │
+  │ LambdaOutput::Suspended {         │                                │
+  │   effect: HttpEffect,             │                                │
+  │   step_id: "chat_1",             │                                │
+  │   new_history: {}                 │                                │
   │ }                                 │                                │
   │──────────────────────────────────►│                                │
   │                         AsyncHttpExecutor                          │
-  │                         .execute_all()                             │
+  │                         .execute_effect()                         │
   │                                   │                                │
   │                         HTTP Request ────────────────────────────► │
   │                                   │                                │
-  │ EffectResult { success, response }│                                │
+  │                    EffectResult { success, response }              │
   │◄──────────────────────────────────│                                │
   │                                   │                                │
-  │ lambda_function(LambdaInput {     │                                │
-  │   effect_results: [result]        │                                │
-  │ })                                │                                │
+  │                         history_store.merge(step_id, result)       │
+  │                                   │                                │
+  │ lambda_main(LambdaInput)          │                                │
+  │   (with history)                  │                                │
   │◄──────────────────────────────────│                                │
   │                                   │                                │
-  │ LambdaOutput {                    │                                │
-  │   effects: [],                    │                                │
+  │ ctx.http() -> cached result      │                                │
+  │ LambdaOutput::Finished {         │                                │
   │   result: ChatResponse {...}      │                                │
   │ }                                 │                                │
   │──────────────────────────────────►│ (return to caller)             │
@@ -259,24 +262,24 @@ allowed_root = "${workspace}"
 tool = true
 ```
 
-### 3. 实现 Lambda 逻辑（统一入口点）
+### 3. 实现 Lambda 逻辑（使用 #[mochi_main] 宏）
 
-所有 lambda 使用 `lambda_function` 通过 `Action` 分发：
+所有 lambda 使用 `#[mochi_main]` 宏，自动处理重放：
 
 ```rust
-use mochiclaw_sdk::lambda::{Action, LambdaInput, LambdaOutput};
-use mochiclaw_sdk::{FnResult, plugin_fn};
+use mochiclaw_sdk::lambda::{Action, Context, SuspendSignal};
+use mochiclaw_macro::mochi_main;
 
-#[plugin_fn]
-pub fn lambda_function(params: LambdaInput) -> FnResult<LambdaOutput> {
-    match params.action {
-        Action::GetTools => handle_get_tools(),
-        Action::ExecuteTool => handle_execute_tool(params),
-        _ => Ok(LambdaOutput {
-            effects: vec![],
-            result: vec![],
-            new_state: Vec::new(),
-        }),
+#[mochi_main]
+pub fn main_handler(
+    ctx: &mut Context,
+    action: Action,
+    payload: &[u8],
+) -> Result<Vec<u8>, SuspendSignal> {
+    match action {
+        Action::GetTools => handle_get_tools(ctx),
+        Action::ExecuteTool => handle_execute_tool(ctx, payload),
+        _ => Ok(Vec::new()),
     }
 }
 ```
