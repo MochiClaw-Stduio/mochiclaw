@@ -41,7 +41,7 @@ pub async fn lambda_call(
             version: 1,
             action: action.clone(),
             payload: payload.clone(),
-            history: history.clone(),
+            history: Box::new(history.clone()),
         };
 
         let output: LambdaOutput = lambda_host

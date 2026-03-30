@@ -106,7 +106,7 @@ pub struct LambdaInput {
     pub payload: Vec<u8>,
     /// 已完成的所有步骤结果（用于重放）
     #[serde(default)]
-    pub history: HashMap<String, Vec<u8>>,
+    pub history: Box<HashMap<String, Vec<u8>>>,
 }
 
 /// 插件返回值

@@ -43,7 +43,7 @@ pub fn mochi_main(_attr: TokenStream, input: TokenStream) -> TokenStream {
             use mochiclaw_sdk::lambda::{Context, LambdaOutput, SuspendSignal};
 
             // 创建 Context
-            let mut ctx = Context::new(input.history);
+            let mut ctx = Context::new(*input.history);
 
             // 调用用户 handler，传递 action 和 payload
             let result = #inner_func_name(&mut ctx, input.action, &input.payload);
