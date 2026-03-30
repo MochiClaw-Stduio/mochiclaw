@@ -61,62 +61,65 @@ write_whitelist = ["${workspace}"]
 tool = true
 ```
 
-## Step 4: Implement Lambda with Unified Entry Point
+## Step 4: Implement Lambda with #[mochi_main] Macro
 
-All lambdas use a unified `lambda_function` entry point with `Action` dispatch:
+All lambdas use `#[mochi_main]` macro with automatic replay support:
 
 ```rust
 // src/lib.rs
-use mochiclaw_sdk::lambda::{Action, ExecuteToolInput, LambdaInput, LambdaOutput};
+use mochiclaw_sdk::lambda::{Action, Context};
 use mochiclaw_sdk::tool::{Tool, ToolExecutionResponse};
-use mochiclaw_sdk::{FnResult, plugin_fn};
+use mochiclaw_macro::mochi_main;
 use std::collections::HashMap;
 
-/// Unified lambda entry point - handles all actions
-#[plugin_fn]
-pub fn lambda_function(params: LambdaInput) -> FnResult<LambdaOutput> {
-    match params.action {
-        Action::GetTools => handle_get_tools(),
-        Action::ExecuteTool => handle_execute_tool(params),
-        _ => Ok(LambdaOutput {
-            effects: vec![],
-            result: ToolExecutionResponse {
-                result: String::new(),
-                error: Some("Unsupported action".to_string()),
-            }
-            .to_bytes()?,
-            new_state: Vec::new(),
-        }),
+/// Lambda entry point - using #[mochi_main] macro
+#[mochi_main]
+pub fn main_handler(
+    ctx: &mut Context,
+    action: Action,
+    payload: &[u8],
+) -> Result<Vec<u8>, mochiclaw_sdk::lambda::SuspendSignal> {
+    match action {
+        Action::GetTools => handle_get_tools(ctx),
+        Action::ExecuteTool => handle_execute_tool(ctx, payload),
+        _ => Ok(Vec::new()),
     }
 }
 
-fn handle_get_tools() -> FnResult<LambdaOutput> {
+fn handle_get_tools(_ctx: &mut Context) -> Result<Vec<u8>, mochiclaw_sdk::lambda::SuspendSignal> {
     let tools = vec![make_my_tool()];
     let tools_json = serde_json::to_string(&tools).unwrap();
-    Ok(LambdaOutput {
-        effects: vec![],
-        result: rmp_serde::to_vec(&tools_json)?,
-        new_state: Vec::new(),
-    })
+    Ok(rmp_serde::to_vec(&tools_json).unwrap_or_default())
 }
 
-fn handle_execute_tool(params: LambdaInput) -> FnResult<LambdaOutput> {
-    let input: ExecuteToolInput = rmp_serde::from_slice(&params.payload)?;
+fn handle_execute_tool(
+    ctx: &mut Context,
+    payload: &[u8],
+) -> Result<Vec<u8>, mochiclaw_sdk::lambda::SuspendSignal> {
+    let input: mochiclaw_sdk::lambda::ExecuteToolInput = rmp_serde::from_slice(payload)
+        .map_err(|_| mochiclaw_sdk::lambda::SuspendSignal::new("parse_error",
+            mochiclaw_sdk::lambda::Effect::HttpRequest(mochiclaw_sdk::lambda::HttpEffect {
+                method: String::new(),
+                url: String::new(),
+                headers: HashMap::new(),
+                body: Some("failed to parse ExecuteToolInput".to_string()),
+                timeout_ms: 0,
+            })
+        ))?;
 
     let result = match input.name.as_str() {
         "my_tool" => do_something(&input.arguments)?,
-        _ => return Err(format!("Unknown tool: {}", input.name).into()),
+        _ => return Ok(rmp_serde::to_vec(&ToolExecutionResponse {
+            result: String::new(),
+            error: Some(format!("Unknown tool: {}", input.name)),
+        }).unwrap_or_default()),
     };
 
-    let response = ToolExecutionResponse {
+    Ok(rmp_serde::to_vec(&ToolExecutionResponse {
         result,
         error: None,
-    };
-    Ok(LambdaOutput {
-        effects: vec![],
-        result: response.to_bytes()?,
-        new_state: Vec::new(),
-    })
+    }).unwrap_or_default())
+}
 }
 
 fn make_my_tool() -> Tool {
@@ -197,43 +200,68 @@ All lambdas use `lambda_function` with `Action` dispatch. The supported actions 
 | `Login` | `LoginInput` | `LoginOutput` |
 | `CheckLogin` | `CheckLoginInput` | `CheckLoginOutput` |
 
-## Effect System (HTTP)
+## Effect System (HTTP + Replay Mechanism)
 
-**Important**: HTTP is no longer a direct host function. Instead, lambdas return `HttpEffect` declarations that the host executes.
+**Important**: HTTP requests are handled via `ctx.http()` which **automatically supports replay**.
 
-For provider lambdas like OpenAI, the `Chat` action typically involves two calls:
-
-1. **First call**: Return `HttpEffect` for the API request
-2. **Second call**: With `effect_results` containing the HTTP response, parse and return `ChatResponse`
+For provider lambdas like OpenAI, using `ctx.http()` automatically:
+1. Checks history for cached result
+2. If not cached, throws `SuspendSignal` to suspend
+3. Host executes HTTP, stores result in history
+4. On next call, automatically resumes from history
 
 ```rust
-// Example: OpenAI provider returns HttpEffect
-fn handle_chat(params: LambdaInput) -> FnResult<LambdaOutput> {
-    if !params.effect_results.is_empty() {
-        // Second call: parse HTTP response
-        let response = &params.effect_results[0];
-        let chat_response = parse_openai_response(response)?;
-        return Ok(LambdaOutput {
-            effects: vec![],
-            result: chat_response.to_bytes()?,
-            new_state: Vec::new(),
-        });
-    }
+// Example: OpenAI provider using ctx.http() for automatic replay
+fn handle_chat(ctx: &mut Context, payload: &[u8]) -> Result<Vec<u8>, SuspendSignal> {
+    let input: ChatInput = rmp_serde::from_slice(payload)
+        .map_err(|_| SuspendSignal::new("chat", Effect::HttpRequest(HttpEffect {
+            method: String::new(),
+            url: String::new(),
+            headers: HashMap::new(),
+            body: Some("failed to parse ChatInput".to_string()),
+            timeout_ms: 0,
+        })))?;
 
-    // First call: return HTTP effect
-    let effect = HttpEffect {
+    // Build OpenAI request
+    let req = HttpEffect {
         method: "POST".to_string(),
         url: "https://api.openai.com/v1/chat/completions".to_string(),
-        headers: headers!["Authorization" => format!("Bearer {}", api_key)],
+        headers: headers,
         body: Some(request_body),
         timeout_ms: 60000,
     };
-    Ok(LambdaOutput {
-        effects: vec![Effect::HttpRequest(effect)],
-        result: Vec::new(),
-        new_state: Vec::new(),
-    })
+
+    // HTTP call - first time throws SuspendSignal, second time returns cached result
+    let http_result = ctx.http("chat", req)?;
+
+    if !http_result.success {
+        // Return error
+        return Ok(rmp_serde::to_vec(&ChatResponse {
+            content: String::new(),
+            tool_calls: Vec::new(),
+            error: http_result.error,
+        }).unwrap_or_default());
+    }
+
+    // Parse response...
+    Ok(rmp_serde::to_vec(&chat_response).unwrap_or_default())
 }
+```
+
+### Context step() Method
+
+For persistent state (like poll cursors), use `ctx.step()`:
+
+```rust
+// Step: check cache, execute if miss
+let state: String = ctx.step("prepare_poll_state", |_ctx| {
+    Ok(String::new()) // default value
+})?;
+
+// Update state (auto-restored from history on next call)
+let _new_state: String = ctx.step("prepare_poll_state", |_ctx| {
+    Ok(new_state_value)
+})?;
 ```
 
 ## Using Host Functions
@@ -273,17 +301,18 @@ let workspace = match config::get("workspace") {
 ## Error Handling
 
 ```rust
-// Return error in tool execution
-Err("Something went wrong".into())
+// Return error (wrapped in SuspendSignal)
+Err(SuspendSignal::new("step_id", Effect::HttpRequest(HttpEffect {
+    method: String::new(),
+    url: String::new(),
+    headers: HashMap::new(),
+    body: Some("Error message".to_string()),
+    timeout_ms: 0,
+})))
 
-// Or in LambdaOutput with error field
-Ok(LambdaOutput {
-    effects: vec![],
-    result: ToolExecutionResponse {
-        result: String::new(),
-        error: Some("Error message".to_string()),
-    }
-    .to_bytes()?,
-    new_state: Vec::new(),
-})
+// Or include error in result
+Ok(rmp_serde::to_vec(&ToolExecutionResponse {
+    result: String::new(),
+    error: Some("Error message".to_string()),
+}).unwrap_or_default())
 ```

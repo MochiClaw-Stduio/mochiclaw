@@ -108,19 +108,17 @@ spawn_channel_poller(channel_name, config, bus, lambda_host, http_executor, poll
 
 ### LambdaLoop (`mochiclaw-core`)
 
-统一的 lambda 调用引擎，带 effect 循环：
+统一的 lambda 调用引擎，带重放机制：
 
 ```rust
-// 根据 LambdaOutput { effects, result, new_state } 的四种情况
-lambda_call(lambda_host, http_executor, lambda_name, action, payload, state)
+// 根据 LambdaOutput { effect, step_id, new_history } 的两种情况
+lambda_call(lambda_host, http_executor, history_store, execution_id, lambda_name, action, payload)
 ```
 
-| result | effects | 行为 |
-|--------|---------|------|
-| 非空 | 空 | 最终结果，结束 loop |
-| 非空 | 非空 | 执行 effects（fire-and-forget），返回 result |
-| 空 | 非空 | 执行 effects，收集结果，继续 loop |
-| 空 | 空 | 错误 |
+| LambdaOutput | 行为 |
+|--------------|------|
+| `Finished(result)` | 执行完成，清理历史，返回结果 |
+| `Suspended { effect, step_id, new_history }` | 执行 effect，合并历史，继续 loop |
 
 ## Lambda 类型与 Action
 
@@ -138,15 +136,17 @@ lambda_call(lambda_host, http_executor, lambda_name, action, payload, state)
 struct LambdaInput {
     version: u32,
     action: Action,
-    state: Vec<u8>,           // 上一次 new_state（MessagePack）
     payload: Vec<u8>,        // Action 参数（MessagePack）
-    effect_results: Vec<EffectResult>,  // 上一次 effect 执行结果
+    history: HashMap<String, Vec<u8>>,  // 已完成步骤的历史（用于重放）
 }
 
-struct LambdaOutput {
-    effects: Vec<Effect>,     // 需要主机执行的 HTTP 请求
-    result: Vec<u8>,         // Action 结果（MessagePack）
-    new_state: Vec<u8>,       // 传给下次调用的状态
+enum LambdaOutput {
+    Finished(Vec<u8>),        // 任务完成，返回最终结果
+    Suspended {
+        effect: Effect,       // 需要执行的 Effect
+        step_id: String,      // 步骤唯一标识
+        new_history: HashMap<String, Vec<u8>>,  // 本次新产生的历史
+    },
 }
 ```
 
@@ -178,38 +178,48 @@ struct LambdaOutput {
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-### HTTP Effect 执行（Provider Lambda）
+### HTTP Effect 执行（重放机制）
 
 ```
-Provider Lambda                    Host                            外部
+Lambda (with Context)              Host                            外部
       │                              │                                │
       │ lambda_call(Chat)            │                                │
       │◄─────────────────────────────┤                                │
       │                              │                                │
-      │ LambdaOutput {               │                                │
-      │   effects: [HttpEffect],     │                                │
-      │   result: empty              │                                │
+      │ ctx.http() -> Suspend        │                                │
+      │ LambdaOutput::Suspended {    │                                │
+      │   effect: HttpEffect,        │                                │
+      │   step_id: "chat_1",         │                                │
+      │   new_history: {}            │                                │
       │ }                            │                                │
       │─────────────────────────────►│                                │
       │                              │                                │
       │                    AsyncHttpExecutor                          │
-      │                    .execute_all()                             │
+      │                    .execute_effect()                          │
       │                              │                                │
       │                    HTTP Request ─────────────────────────────►│
       │                              │                                │
       │                    EffectResult { success, response }         │
       │◄─────────────────────────────│                                │
       │                              │                                │
-      │ lambda_call(Chat,            │                                │
-      │   effect_results=[result])   │                                │
+      │                    history_store.merge(step_id, result)        │
+      │                              │                                │
+      │ lambda_call(Chat)            │                                │
+      │   (with history)             │                                │
       │◄─────────────────────────────┤                                │
       │                              │                                │
-      │ LambdaOutput {               │                                │
-      │   effects: [],               │                                │
+      │ ctx.http() -> cached result  │                                │
+      │ LambdaOutput::Finished {     │                                │
       │   result: ChatResponse       │                                │
       │ }                            │                                │
       │─────────────────────────────►│ (return to AgentLoop)          │
 ```
+
+**重放机制说明**：
+1. Lambda 调用 `ctx.http()` 时，先检查 `history` 是否有缓存
+2. 若无缓存，抛出 `SuspendSignal`，lambda 返回 `Suspended`
+3. 主机执行 HTTP，结果存入 `history_store`
+4. 下次调用时，`ctx.http()` 直接从 history 返回缓存结果
 
 ## 能力 Enforcement
 

@@ -61,62 +61,64 @@ write_whitelist = ["${workspace}"]
 tool = true
 ```
 
-## 步骤 4: 实现 Lambda（统一入口点）
+## 步骤 4: 实现 Lambda（使用 #[mochi_main] 宏）
 
-所有 lambda 使用统一的 `lambda_function` 入口点，通过 `Action` 分发：
+所有 lambda 使用 `#[mochi_main]` 宏，自动处理重放机制：
 
 ```rust
 // src/lib.rs
-use mochiclaw_sdk::lambda::{Action, ExecuteToolInput, LambdaInput, LambdaOutput};
+use mochiclaw_sdk::lambda::{Action, Context};
 use mochiclaw_sdk::tool::{Tool, ToolExecutionResponse};
-use mochiclaw_sdk::{FnResult, plugin_fn};
+use mochiclaw_macro::mochi_main;
 use std::collections::HashMap;
 
-/// 统一的 lambda 入口点 - 处理所有 action
-#[plugin_fn]
-pub fn lambda_function(params: LambdaInput) -> FnResult<LambdaOutput> {
-    match params.action {
-        Action::GetTools => handle_get_tools(),
-        Action::ExecuteTool => handle_execute_tool(params),
-        _ => Ok(LambdaOutput {
-            effects: vec![],
-            result: ToolExecutionResponse {
-                result: String::new(),
-                error: Some("Unsupported action".to_string()),
-            }
-            .to_bytes()?,
-            new_state: Vec::new(),
-        }),
+/// Lambda 入口点 - 使用 #[mochi_main] 宏
+#[mochi_main]
+pub fn main_handler(
+    ctx: &mut Context,
+    action: Action,
+    payload: &[u8],
+) -> Result<Vec<u8>, mochiclaw_sdk::lambda::SuspendSignal> {
+    match action {
+        Action::GetTools => handle_get_tools(ctx),
+        Action::ExecuteTool => handle_execute_tool(ctx, payload),
+        _ => Ok(Vec::new()),
     }
 }
 
-fn handle_get_tools() -> FnResult<LambdaOutput> {
+fn handle_get_tools(_ctx: &mut Context) -> Result<Vec<u8>, mochiclaw_sdk::lambda::SuspendSignal> {
     let tools = vec![make_my_tool()];
     let tools_json = serde_json::to_string(&tools).unwrap();
-    Ok(LambdaOutput {
-        effects: vec![],
-        result: rmp_serde::to_vec(&tools_json)?,
-        new_state: Vec::new(),
-    })
+    Ok(rmp_serde::to_vec(&tools_json).unwrap_or_default())
 }
 
-fn handle_execute_tool(params: LambdaInput) -> FnResult<LambdaOutput> {
-    let input: ExecuteToolInput = rmp_serde::from_slice(&params.payload)?;
+fn handle_execute_tool(
+    ctx: &mut Context,
+    payload: &[u8],
+) -> Result<Vec<u8>, mochiclaw_sdk::lambda::SuspendSignal> {
+    let input: mochiclaw_sdk::lambda::ExecuteToolInput = rmp_serde::from_slice(payload)
+        .map_err(|_| mochiclaw_sdk::lambda::SuspendSignal::new("parse_error",
+            mochiclaw_sdk::lambda::Effect::HttpRequest(mochiclaw_sdk::lambda::HttpEffect {
+                method: String::new(),
+                url: String::new(),
+                headers: HashMap::new(),
+                body: Some("failed to parse ExecuteToolInput".to_string()),
+                timeout_ms: 0,
+            })
+        ))?;
 
     let result = match input.name.as_str() {
         "my_tool" => do_something(&input.arguments)?,
-        _ => return Err(format!("Unknown tool: {}", input.name).into()),
+        _ => return Ok(rmp_serde::to_vec(&ToolExecutionResponse {
+            result: String::new(),
+            error: Some(format!("Unknown tool: {}", input.name)),
+        }).unwrap_or_default()),
     };
 
-    let response = ToolExecutionResponse {
+    Ok(rmp_serde::to_vec(&ToolExecutionResponse {
         result,
         error: None,
-    };
-    Ok(LambdaOutput {
-        effects: vec![],
-        result: response.to_bytes()?,
-        new_state: Vec::new(),
-    })
+    }).unwrap_or_default())
 }
 
 fn make_my_tool() -> Tool {
@@ -197,43 +199,68 @@ cp lambdas/mochi-my-lambda/manifest.toml \
 | `Login` | `LoginInput` | `LoginOutput` |
 | `CheckLogin` | `CheckLoginInput` | `CheckLoginOutput` |
 
-## Effect 系统（HTTP）
+## Effect 系统（HTTP + 重放机制）
 
-**重要**：HTTP 不再是直接的 host function。Lambda 返回 `HttpEffect` 声明，由主机执行。
+**重要**：HTTP 请求通过 `ctx.http()` 自动处理，**自动支持重放**。
 
-对于像 OpenAI 这样的 provider lambda，`Chat` action 通常涉及两次调用：
-
-1. **第一次调用**：返回 `HttpEffect` 用于 API 请求
-2. **第二次调用**：携带 `effect_results`（包含 HTTP 响应），解析并返回 `ChatResponse`
+对于像 OpenAI 这样的 provider lambda，使用 `ctx.http()` 会自动：
+1. 检查 history 是否有缓存
+2. 若无缓存，抛出 `SuspendSignal` 暂停
+3. 主机执行 HTTP，结果存入 history
+4. 下次调用时自动从 history 恢复
 
 ```rust
-// 示例：OpenAI provider 返回 HttpEffect
-fn handle_chat(params: LambdaInput) -> FnResult<LambdaOutput> {
-    if !params.effect_results.is_empty() {
-        // 第二次调用：解析 HTTP 响应
-        let response = &params.effect_results[0];
-        let chat_response = parse_openai_response(response)?;
-        return Ok(LambdaOutput {
-            effects: vec![],
-            result: chat_response.to_bytes()?,
-            new_state: Vec::new(),
-        });
-    }
+// 示例：OpenAI provider 使用 ctx.http() 自动重放
+fn handle_chat(ctx: &mut Context, payload: &[u8]) -> Result<Vec<u8>, SuspendSignal> {
+    let input: ChatInput = rmp_serde::from_slice(payload)
+        .map_err(|_| SuspendSignal::new("chat", Effect::HttpRequest(HttpEffect {
+            method: String::new(),
+            url: String::new(),
+            headers: HashMap::new(),
+            body: Some("failed to parse ChatInput".to_string()),
+            timeout_ms: 0,
+        })))?;
 
-    // 第一次调用：返回 HTTP effect
-    let effect = HttpEffect {
+    // 构建 OpenAI 请求
+    let req = HttpEffect {
         method: "POST".to_string(),
         url: "https://api.openai.com/v1/chat/completions".to_string(),
-        headers: headers!["Authorization" => format!("Bearer {}", api_key)],
+        headers: headers,
         body: Some(request_body),
         timeout_ms: 60000,
     };
-    Ok(LambdaOutput {
-        effects: vec![Effect::HttpRequest(effect)],
-        result: Vec::new(),
-        new_state: Vec::new(),
-    })
+
+    // HTTP 调用 - 第一次抛出 SuspendSignal，第二次自动返回缓存结果
+    let http_result = ctx.http("chat", req)?;
+
+    if !http_result.success {
+        // 返回错误
+        return Ok(rmp_serde::to_vec(&ChatResponse {
+            content: String::new(),
+            tool_calls: Vec::new(),
+            error: http_result.error,
+        }).unwrap_or_default());
+    }
+
+    // 解析响应...
+    Ok(rmp_serde::to_vec(&chat_response).unwrap_or_default())
 }
+```
+
+### Context 的 step() 方法
+
+对于需要持久化的状态（如轮询游标），使用 `ctx.step()`：
+
+```rust
+// 步骤：检查缓存，若无则执行
+let state: String = ctx.step("prepare_poll_state", |_ctx| {
+    Ok(String::new()) // 默认值
+})?;
+
+// 更新状态（下次调用时自动从历史恢复）
+let _new_state: String = ctx.step("prepare_poll_state", |_ctx| {
+    Ok(new_state_value)
+})?;
 ```
 
 ## 使用 Host Functions
@@ -273,17 +300,18 @@ let workspace = match config::get("workspace") {
 ## 错误处理
 
 ```rust
-// 在工具执行中返回错误
-Err("Something went wrong".into())
+// 返回错误（通过 SuspendSignal 包装）
+Err(SuspendSignal::new("step_id", Effect::HttpRequest(HttpEffect {
+    method: String::new(),
+    url: String::new(),
+    headers: HashMap::new(),
+    body: Some("Error message".to_string()),
+    timeout_ms: 0,
+})))
 
-// 或在 LambdaOutput 中使用 error 字段
-Ok(LambdaOutput {
-    effects: vec![],
-    result: ToolExecutionResponse {
-        result: String::new(),
-        error: Some("Error message".to_string()),
-    }
-    .to_bytes()?,
-    new_state: Vec::new(),
-})
+// 或者在结果中包含错误信息
+Ok(rmp_serde::to_vec(&ToolExecutionResponse {
+    result: String::new(),
+    error: Some("Error message".to_string()),
+}).unwrap_or_default())
 ```

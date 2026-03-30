@@ -165,34 +165,37 @@ struct HttpEffect {
 }
 ```
 
-### Effect Flow
+### Effect Flow (Replay Mechanism)
 
 ```
-Lambda                              Host                            External
+Lambda (with Context)              Host                            External
   │                                   │                                │
-  │ lambda_function(LambdaInput)      │                                │
+  │ lambda_main(LambdaInput)          │                                │
   │◄──────────────────────────────────│                                │
   │                                   │                                │
-  │ LambdaOutput {                    │                                │
-  │   effects: [HttpEffect {...}],    │                                │
-  │   result: Vec::new()              │                                │
+  │ ctx.http() -> Suspend            │                                │
+  │ LambdaOutput::Suspended {         │                                │
+  │   effect: HttpEffect,             │                                │
+  │   step_id: "chat_1",             │                                │
+  │   new_history: {}                 │                                │
   │ }                                 │                                │
   │──────────────────────────────────►│                                │
   │                         AsyncHttpExecutor                          │
-  │                         .execute_all()                             │
+  │                         .execute_effect()                         │
   │                                   │                                │
   │                         HTTP Request ────────────────────────────► │
   │                                   │                                │
-  │ EffectResult { success, response }│                                │
+  │                    EffectResult { success, response }              │
   │◄──────────────────────────────────│                                │
   │                                   │                                │
-  │ lambda_function(LambdaInput {     │                                │
-  │   effect_results: [result]        │                                │
-  │ })                                │                                │
+  │                         history_store.merge(step_id, result)       │
+  │                                   │                                │
+  │ lambda_main(LambdaInput)          │                                │
+  │   (with history)                  │                                │
   │◄──────────────────────────────────│                                │
   │                                   │                                │
-  │ LambdaOutput {                    │                                │
-  │   effects: [],                    │                                │
+  │ ctx.http() -> cached result      │                                │
+  │ LambdaOutput::Finished {         │                                │
   │   result: ChatResponse {...}      │                                │
   │ }                                 │                                │
   │──────────────────────────────────►│ (return to caller)             │
@@ -259,24 +262,24 @@ allowed_root = "${workspace}"
 tool = true
 ```
 
-### 3. Implement Lambda with Unified Entry Point
+### 3. Implement Lambda with #[mochi_main] Macro
 
-All lambdas use `lambda_function` with `Action` dispatch:
+All lambdas use `#[mochi_main]` macro with automatic replay:
 
 ```rust
-use mochiclaw_sdk::lambda::{Action, LambdaInput, LambdaOutput};
-use mochiclaw_sdk::{FnResult, plugin_fn};
+use mochiclaw_sdk::lambda::{Action, Context, SuspendSignal};
+use mochiclaw_macro::mochi_main;
 
-#[plugin_fn]
-pub fn lambda_function(params: LambdaInput) -> FnResult<LambdaOutput> {
-    match params.action {
-        Action::GetTools => handle_get_tools(),
-        Action::ExecuteTool => handle_execute_tool(params),
-        _ => Ok(LambdaOutput {
-            effects: vec![],
-            result: vec![],
-            new_state: Vec::new(),
-        }),
+#[mochi_main]
+pub fn main_handler(
+    ctx: &mut Context,
+    action: Action,
+    payload: &[u8],
+) -> Result<Vec<u8>, SuspendSignal> {
+    match action {
+        Action::GetTools => handle_get_tools(ctx),
+        Action::ExecuteTool => handle_execute_tool(ctx, payload),
+        _ => Ok(Vec::new()),
     }
 }
 ```

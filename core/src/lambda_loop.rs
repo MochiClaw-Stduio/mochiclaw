@@ -1,114 +1,108 @@
-//! Unified Lambda Loop - 通用的插件循环调用引擎
+//! Unified Lambda Loop - 持久化执行的插件调用引擎
 //!
-//! 插件通过返回 (effects, result) 来控制流程：
-//! - result 非空 + effects 为空 → 最终结果，结束 loop
-//! - result 非空 + effects 非空 → 并行执行 effects，返回 result，结束 loop
-//! - effects 非空 → 并行执行所有 effect，收集结果，继续 loop
-//! - effects 为空但 result 也为空 → 错误
+//! 插件通过返回 LambdaOutput 来控制流程：
+//! - Finished(result) → 最终结果，结束 loop
+//! - Suspended { effect, step_id, new_history } → 执行 effect，合并历史，继续 loop
 
 use crate::error::Error;
+use crate::history_store::HistoryStore;
 use crate::http_executor::AsyncHttpExecutor;
 use mochiclaw_lambda::LambdaHost;
 use mochiclaw_sdk::lambda::{Action, EffectResult, LambdaInput, LambdaOutput};
 use std::sync::Arc;
 
-/// 使用统一的 loop 引擎调用插件
+/// 使用持久化执行模型调用插件
 ///
 /// # 参数
 /// - `lambda_host`: 插件主机
 /// - `http_executor`: HTTP 执行器
+/// - `history_store`: 历史持久化存储
+/// - `execution_id`: 唯一执行标识
 /// - `lambda_name`: 插件名称
 /// - `action`: 要执行的动作
 /// - `payload`: action 对应的输入参数（msgpack 编码）
-/// - `initial_state`: 插件初始状态（msgpack 编码）
 ///
 /// # 返回
 /// - `Ok(result)`: 插件最终返回的结果（msgpack 编码）
 pub async fn lambda_call(
     lambda_host: &LambdaHost,
     http_executor: Arc<AsyncHttpExecutor>,
+    history_store: Arc<HistoryStore>,
+    execution_id: &str,
     lambda_name: &str,
     action: Action,
     payload: Vec<u8>,
-    initial_state: Vec<u8>,
 ) -> Result<Vec<u8>, Error> {
-    let mut current_state = initial_state;
-    let current_payload = payload;
-    let mut effect_results: Vec<EffectResult> = Vec::new();
+    // 加载历史（可能为空）
+    let mut history = history_store.get(execution_id).await.unwrap_or_default();
 
     loop {
         let input = LambdaInput {
             version: 1,
             action: action.clone(),
-            state: current_state.clone(),
-            payload: current_payload.clone(),
-            effect_results: effect_results.clone(),
+            payload: payload.clone(),
+            history: Box::new(history.clone()),
         };
 
         let output: LambdaOutput = lambda_host
-            .call(lambda_name, "lambda_function", &input)
+            .call(lambda_name, "lambda_main", &input)
             .map_err(|e| Error::Lambda(e.to_string()))?;
 
-        // 情况1: result 非空 + effects 为空 → 最终结果，结束 loop
-        if !output.result.is_empty() && output.effects.is_empty() {
-            return Ok(output.result);
-        }
+        match output {
+            // 情况1: Finished → 执行完成，清理历史，返回结果
+            LambdaOutput::Finished(result) => {
+                history_store.clear(execution_id).await;
+                return Ok(result);
+            }
 
-        // 情况2: result 非空 + effects 非空 → 并行执行 effects，返回 result，结束 loop
-        if !output.result.is_empty() && !output.effects.is_empty() {
-            let effects = output.effects;
-            let result = output.result.clone();
-            // 在后台执行 effects，不等待结果
-            let http_executor = http_executor.clone();
-            let lambda_name = lambda_name.to_string();
-            tokio::spawn(async move {
-                let _ = http_executor.execute_all(&lambda_name, effects).await;
-            });
-            return Ok(result);
-        }
+            // 情况2: Suspended → 需要执行 effect
+            LambdaOutput::Suspended {
+                effect,
+                step_id,
+                new_history,
+            } => {
+                // 合并新历史到存储
+                history_store.merge(execution_id, new_history).await;
 
-        // 情况3: effects 为空但 result 也为空 → 错误
-        if output.effects.is_empty() {
-            return Err(Error::Lambda(
-                "lambda returned no effects and no result".to_string(),
-            ));
-        }
-
-        // 情况4: effects 非空 → 并行执行，收集结果，继续 loop
-        tracing::debug!(
-            "executing {} effect(s) for action {:?}",
-            output.effects.len(),
-            action
-        );
-
-        effect_results = http_executor.execute_all(lambda_name, output.effects).await;
-
-        // 如果有任何 effect 执行失败，记录 warning
-        for (i, result) in effect_results.iter().enumerate() {
-            if !result.success {
-                tracing::warn!(
-                    "effect {} failed: {:?}",
-                    i,
-                    result.error.as_deref().unwrap_or("unknown error")
+                tracing::debug!(
+                    "executing effect for step '{}' (execution_id={})",
+                    step_id,
+                    execution_id
                 );
+
+                // 执行 effect，得到 HTTP 响应体字符串
+                let response_str = http_executor
+                    .execute_effect(lambda_name, &effect)
+                    .await?;
+
+                // 将 EffectResult 存入历史（key 为 step_id），lambda 下次会从历史中查找
+                let effect_result = EffectResult {
+                    success: true,
+                    response: Some(response_str),
+                    error: None,
+                };
+                let result_data =
+                    rmp_serde::to_vec(&effect_result).map_err(|e| Error::Lambda(e.to_string()))?;
+                history_store
+                    .merge(execution_id, [(step_id, result_data)].into())
+                    .await;
+
+                // 重新加载历史（这样下次循环时能拿到最新的历史）
+                history = history_store.get(execution_id).await.unwrap_or_default();
             }
         }
-
-        // 更新状态，用于下一次调用
-        current_state = output.new_state;
-
-        // payload 保持不变，一直透传给插件
     }
 }
 
-/// 同上，但 payload 和 state 使用具体类型自动序列化/反序列化
+/// 同上，但 payload 使用具体类型自动序列化
 pub async fn lambda_call_typed<TPayload, TResult>(
     lambda_host: &LambdaHost,
     http_executor: Arc<AsyncHttpExecutor>,
+    history_store: Arc<HistoryStore>,
+    execution_id: &str,
     lambda_name: &str,
     action: Action,
     payload: &TPayload,
-    initial_state: &[u8],
 ) -> Result<TResult, Error>
 where
     TPayload: serde::Serialize,
@@ -120,10 +114,11 @@ where
     let result_bytes = lambda_call(
         lambda_host,
         http_executor,
+        history_store,
+        execution_id,
         lambda_name,
         action,
         payload_bytes,
-        initial_state.to_vec(),
     )
     .await?;
 

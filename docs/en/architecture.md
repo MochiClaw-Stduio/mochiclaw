@@ -108,19 +108,17 @@ Executes `HttpEffect` returned by lambdas **on the host side**:
 
 ### LambdaLoop (`mochiclaw-core`)
 
-Unified lambda calling engine with effect loop:
+Unified lambda calling engine with replay mechanism:
 
 ```rust
-// Four scenarios based on LambdaOutput { effects, result, new_state }
-lambda_call(lambda_host, http_executor, lambda_name, action, payload, state)
+// Two scenarios based on LambdaOutput { effect, step_id, new_history }
+lambda_call(lambda_host, http_executor, history_store, execution_id, lambda_name, action, payload)
 ```
 
-| result | effects | Behavior |
-|--------|---------|----------|
-| non-empty | empty | Final result, end loop |
-| non-empty | non-empty | Execute effects (fire-and-forget), return result |
-| empty | non-empty | Execute effects, collect results, continue loop |
-| empty | empty | Error |
+| LambdaOutput | Behavior |
+|--------------|----------|
+| `Finished(result)` | Task complete, clear history, return result |
+| `Suspended { effect, step_id, new_history }` | Execute effect, merge history, continue loop |
 
 ## Lambda Types & Actions
 
@@ -138,15 +136,17 @@ All lambdas use a unified `lambda_function` entry point with `Action` dispatch:
 struct LambdaInput {
     version: u32,
     action: Action,
-    state: Vec<u8>,           // Previous new_state (MessagePack)
     payload: Vec<u8>,         // Action params (MessagePack)
-    effect_results: Vec<EffectResult>,  // From previous effect execution
+    history: HashMap<String, Vec<u8>>,  // Completed steps history (for replay)
 }
 
-struct LambdaOutput {
-    effects: Vec<Effect>,     // HTTP requests for host to execute
-    result: Vec<u8>,          // Action result (MessagePack)
-    new_state: Vec<u8>,       // Persisted for next call
+enum LambdaOutput {
+    Finished(Vec<u8>),        // Task complete, return final result
+    Suspended {
+        effect: Effect,       // Effect to execute
+        step_id: String,      // Step unique identifier
+        new_history: HashMap<String, Vec<u8>>,  // New history from this run
+    },
 }
 ```
 
@@ -178,38 +178,48 @@ struct LambdaOutput {
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-### HTTP Effect Execution (Provider Lambda)
+### HTTP Effect Execution (Replay Mechanism)
 
 ```
-Provider Lambda                    Host                            External
+Lambda (with Context)              Host                            External
       │                              │                                │
       │ lambda_call(Chat)            │                                │
       │◄─────────────────────────────┤                                │
       │                              │                                │
-      │ LambdaOutput {               │                                │
-      │   effects: [HttpEffect],     │                                │
-      │   result: empty              │                                │
+      │ ctx.http() -> Suspend        │                                │
+      │ LambdaOutput::Suspended {    │                                │
+      │   effect: HttpEffect,        │                                │
+      │   step_id: "chat_1",         │                                │
+      │   new_history: {}            │                                │
       │ }                            │                                │
       │─────────────────────────────►│                                │
       │                              │                                │
       │                    AsyncHttpExecutor                          │
-      │                    .execute_all()                             │
+      │                    .execute_effect()                          │
       │                              │                                │
       │                    HTTP Request ─────────────────────────────►│
       │                              │                                │
       │                    EffectResult { success, response }         │
       │◄─────────────────────────────│                                │
       │                              │                                │
-      │ lambda_call(Chat,            │                                │
-      │   effect_results=[result])   │                                │
+      │                    history_store.merge(step_id, result)        │
+      │                              │                                │
+      │ lambda_call(Chat)            │                                │
+      │   (with history)             │                                │
       │◄─────────────────────────────┤                                │
       │                              │                                │
-      │ LambdaOutput {               │                                │
-      │   effects: [],               │                                │
+      │ ctx.http() -> cached result  │                                │
+      │ LambdaOutput::Finished {     │                                │
       │   result: ChatResponse       │                                │
       │ }                            │                                │
       │─────────────────────────────►│ (return to AgentLoop)          │
 ```
+
+**Replay mechanism explanation**:
+1. When lambda calls `ctx.http()`, check `history` for cached result
+2. If not cached, throw `SuspendSignal`, lambda returns `Suspended`
+3. Host executes HTTP, stores result in `history_store`
+4. On next call, `ctx.http()` returns cached result directly from history
 
 ## Capability Enforcement
 

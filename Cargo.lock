@@ -1736,6 +1736,7 @@ name = "mochi-fs"
 version = "0.1.0"
 dependencies = [
  "extism-pdk",
+ "mochiclaw-macro",
  "mochiclaw-sdk",
  "rmp-serde",
  "serde",
@@ -1747,6 +1748,7 @@ name = "mochi-openai"
 version = "0.1.0"
 dependencies = [
  "extism-pdk",
+ "mochiclaw-macro",
  "mochiclaw-sdk",
  "rmp-serde",
  "serde",
@@ -1764,6 +1766,7 @@ dependencies = [
  "generic-array",
  "hex",
  "md-5",
+ "mochiclaw-macro",
  "mochiclaw-sdk",
  "rmp-serde",
  "serde",
@@ -1846,6 +1849,15 @@ dependencies = [
  "toml 0.8.23",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "mochiclaw-macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
