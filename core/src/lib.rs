@@ -7,6 +7,7 @@ pub mod bus;
 pub mod commands;
 pub mod context;
 pub mod error;
+pub mod history_store;
 pub mod http_executor;
 pub mod lambda_loop;
 pub mod poller;
@@ -17,7 +18,9 @@ pub use bus::MessageBus;
 pub use commands::{CommandRegistry, parse_command};
 pub use context::ContextBuilder;
 pub use error::Error;
+pub use history_store::HistoryStore;
 pub use http_executor::AsyncHttpExecutor;
+pub use lambda_loop::{lambda_call, lambda_call_typed};
 pub use session::{Message, Session, SessionManager};
 
 // Re-export config from mochiclaw-config

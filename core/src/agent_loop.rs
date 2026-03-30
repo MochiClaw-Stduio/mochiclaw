@@ -4,6 +4,7 @@ use crate::bus::MessageBus;
 use crate::commands::{CommandRegistry, parse_command};
 use crate::context::ContextBuilder;
 use crate::error::Error;
+use crate::history_store::HistoryStore;
 use crate::http_executor::AsyncHttpExecutor;
 use crate::lambda_loop::lambda_call_typed;
 use crate::session::SessionManager;
@@ -18,17 +19,17 @@ use mochiclaw_sdk::tool::{Tool, ToolExecutionResponse};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub struct AgentLoop {
     bus: Arc<MessageBus>,
     lambda_host: Arc<LambdaHost>,
     http_executor: Arc<AsyncHttpExecutor>,
+    history_store: Arc<HistoryStore>,
     model_config: ModelConfig,
     max_iterations: usize,
     /// Channel configurations for polling (channel_name -> config)
     channel_configs: HashMap<String, ChannelConfig>,
-    /// Per-channel polling state (MessagePack bytes)
-    poll_state: Arc<tokio::sync::Mutex<HashMap<String, Vec<u8>>>>,
     /// Session manager for conversation history (uses Mutex for interior mutability)
     sessions: Arc<Mutex<SessionManager>>,
     /// Command registry for slash commands
@@ -39,6 +40,8 @@ pub struct AgentLoop {
     tool_definitions: Arc<Mutex<Vec<Tool>>>,
     /// Mapping from tool name to lambda name that provides it
     tool_lambda_map: Arc<Mutex<HashMap<String, String>>>,
+    /// Counter for generating unique execution IDs
+    execution_counter: AtomicU64,
 }
 
 impl Clone for AgentLoop {
@@ -47,15 +50,16 @@ impl Clone for AgentLoop {
             bus: Arc::clone(&self.bus),
             lambda_host: Arc::clone(&self.lambda_host),
             http_executor: Arc::clone(&self.http_executor),
+            history_store: Arc::clone(&self.history_store),
             model_config: self.model_config.clone(),
             max_iterations: self.max_iterations,
             channel_configs: self.channel_configs.clone(),
-            poll_state: Arc::clone(&self.poll_state),
             sessions: Arc::clone(&self.sessions),
             commands: self.commands.clone(),
             context_builder: self.context_builder.clone(),
             tool_definitions: Arc::clone(&self.tool_definitions),
             tool_lambda_map: Arc::clone(&self.tool_lambda_map),
+            execution_counter: AtomicU64::new(self.execution_counter.load(Ordering::SeqCst)),
         }
     }
 }
@@ -111,16 +115,23 @@ impl AgentLoop {
             bus,
             lambda_host: Arc::clone(&lambda_host),
             http_executor: Arc::new(AsyncHttpExecutor::new(Arc::clone(&lambda_host))),
+            history_store: Arc::new(HistoryStore::new()),
             model_config,
             max_iterations: config.agent.max_iterations,
             channel_configs,
-            poll_state: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             sessions: Arc::new(Mutex::new(SessionManager::new(sessions_dir))),
             commands: CommandRegistry::new(),
             context_builder: ContextBuilder::new(workspace),
             tool_definitions: Arc::new(Mutex::new(Vec::new())),
             tool_lambda_map: Arc::new(Mutex::new(HashMap::new())),
+            execution_counter: AtomicU64::new(0),
         }
+    }
+
+    /// Generate a unique execution ID
+    fn next_execution_id(&self) -> String {
+        let id = self.execution_counter.fetch_add(1, Ordering::SeqCst);
+        format!("exec-{}", id)
     }
 
     /// Discover and load tool definitions from all loaded tool lambdas.
@@ -134,13 +145,15 @@ impl AgentLoop {
 
         for lambda_name in tool_lambda_names {
             // Use lambda_call_typed to call GetTools action
+            let execution_id = self.next_execution_id();
             let tools_result: Result<String, Error> = lambda_call_typed(
                 &self.lambda_host,
                 Arc::clone(&self.http_executor),
+                Arc::clone(&self.history_store),
+                &execution_id,
                 &lambda_name,
                 Action::GetTools,
                 &GetToolsInput {},
-                &[],
             )
             .await
             .map_err(|e| Error::Lambda(e.to_string()));
@@ -219,7 +232,7 @@ impl AgentLoop {
                 Arc::clone(&self.bus),
                 Arc::clone(&self.lambda_host),
                 Arc::clone(&self.http_executor),
-                Arc::clone(&self.poll_state),
+                Arc::clone(&self.history_store),
             );
             poller_handles.push(poller);
         }
@@ -352,13 +365,15 @@ impl AgentLoop {
                 chat_id: msg.chat_id.clone(),
                 typing: true,
             };
+            let execution_id = self.next_execution_id();
             let _: Option<mochiclaw_sdk::lambda::SendOutput> = lambda_call_typed(
                 &self.lambda_host,
                 Arc::clone(&self.http_executor),
+                Arc::clone(&self.history_store),
+                &execution_id,
                 &msg.channel,
                 Action::SetTyping,
                 &typing_input,
-                &[],
             )
             .await
             .ok();
@@ -393,13 +408,15 @@ impl AgentLoop {
                 request: chat_request.clone(),
             };
 
+            let execution_id = self.next_execution_id();
             let response: ChatResponse = lambda_call_typed(
                 &self.lambda_host,
                 Arc::clone(&self.http_executor),
+                Arc::clone(&self.history_store),
+                &execution_id,
                 &self.model_config.provider,
                 Action::Chat,
                 &chat_input,
-                &[],
             )
             .await
             .map_err(|e| Error::Lambda(format!("provider call failed: {}", e)))?;
@@ -478,13 +495,15 @@ impl AgentLoop {
                     arguments: tool_call.arguments.clone(),
                 };
 
+                let execution_id = self.next_execution_id();
                 let tool_response: ToolExecutionResponse = lambda_call_typed(
                     &self.lambda_host,
                     Arc::clone(&self.http_executor),
+                    Arc::clone(&self.history_store),
+                    &execution_id,
                     &lambda_name,
                     Action::ExecuteTool,
                     &tool_input,
-                    &[],
                 )
                 .await
                 .map_err(|e| Error::Lambda(format!("tool call failed: {}", e)))?;
@@ -580,13 +599,15 @@ impl AgentLoop {
         };
 
         // Use unified lambda_loop to handle all effects
+        let execution_id = self.next_execution_id();
         let _: SendOutput = lambda_call_typed(
             &self.lambda_host,
             Arc::clone(&self.http_executor),
+            Arc::clone(&self.history_store),
+            &execution_id,
             channel_name,
             Action::FormatSend,
             &input,
-            &[], // empty initial state for send
         )
         .await
         .map_err(|e| Error::Lambda(format!("format_send failed: {}", e)))?;

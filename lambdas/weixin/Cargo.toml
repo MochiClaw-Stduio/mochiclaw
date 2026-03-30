@@ -13,6 +13,7 @@ serde.workspace = true
 serde_json.workspace = true
 rmp-serde.workspace = true
 mochiclaw-sdk = { path = "../../sdk" }
+mochiclaw-macro = { path = "../../sdk-macro" }
 base64.workspace = true
 hex = "0.4"
 aes = "0.8"

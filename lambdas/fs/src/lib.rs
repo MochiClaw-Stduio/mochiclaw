@@ -1,34 +1,33 @@
 //! Filesystem Tool Lambda
 //!
 //! Provides read_file, write_file, edit_file, and list_dir tools.
-//! Uses lambda_function as the unified entry point.
+//! Uses the durable execution model with Context for suspend/resume.
 
 use std::collections::HashMap;
 
 use mochiclaw_sdk::host::fs;
-use mochiclaw_sdk::lambda::{Action, ExecuteToolInput, LambdaInput, LambdaOutput};
-use mochiclaw_sdk::tool::{Tool, ToolExecutionResponse};
-use mochiclaw_sdk::{FnResult, ToBytes, config, plugin_fn};
+use mochiclaw_sdk::lambda::{Action, ExecuteToolInput, ExecuteToolOutput};
+use mochiclaw_sdk::tool::Tool;
+
+use mochiclaw_macro::mochi_main;
 
 // ============================================================================
 // Lambda Function Entry Point
 // ============================================================================
 
-/// Unified lambda entry point for tool operations
-#[plugin_fn]
-pub fn lambda_function(params: LambdaInput) -> FnResult<LambdaOutput> {
-    match params.action {
+#[mochi_main]
+pub fn main_handler(
+    _ctx: &mut mochiclaw_sdk::lambda::Context,
+    action: Action,
+    payload: &[u8],
+) -> Result<Vec<u8>, mochiclaw_sdk::lambda::SuspendSignal> {
+    match action {
         Action::GetTools => handle_get_tools(),
-        Action::ExecuteTool => handle_execute_tool(params),
-        _ => Ok(LambdaOutput {
-            effects: vec![],
-            result: ToolExecutionResponse {
-                result: String::new(),
-                error: Some("fs lambda only supports GetTools and ExecuteTool".to_string()),
-            }
-            .to_bytes()?,
-            new_state: Vec::new(),
-        }),
+        Action::ExecuteTool => handle_execute_tool(payload),
+        _ => Ok(rmp_serde::to_vec(&ExecuteToolOutput {
+            result: String::new(),
+            error: Some("fs lambda only supports GetTools and ExecuteTool".to_string()),
+        }).unwrap_or_default()),
     }
 }
 
@@ -36,7 +35,7 @@ pub fn lambda_function(params: LambdaInput) -> FnResult<LambdaOutput> {
 // Tool Handlers
 // ============================================================================
 
-fn handle_get_tools() -> FnResult<LambdaOutput> {
+fn handle_get_tools() -> Result<Vec<u8>, mochiclaw_sdk::lambda::SuspendSignal> {
     let tools = vec![
         make_read_file_tool(),
         make_write_file_tool(),
@@ -44,18 +43,23 @@ fn handle_get_tools() -> FnResult<LambdaOutput> {
         make_list_dir_tool(),
     ];
     let tools_json = serde_json::to_string(&tools).unwrap();
-    Ok(LambdaOutput {
-        effects: vec![],
-        result: rmp_serde::to_vec(&tools_json)?,
-        new_state: Vec::new(),
-    })
+    Ok(rmp_serde::to_vec(&tools_json).unwrap_or_default())
 }
 
-fn handle_execute_tool(params: LambdaInput) -> FnResult<LambdaOutput> {
-    let input: ExecuteToolInput = rmp_serde::from_slice(&params.payload)?;
+fn handle_execute_tool(
+    payload: &[u8],
+) -> Result<Vec<u8>, mochiclaw_sdk::lambda::SuspendSignal> {
+    let input: ExecuteToolInput = rmp_serde::from_slice(payload)
+        .map_err(|_| mochiclaw_sdk::lambda::SuspendSignal::new("parse_input", mochiclaw_sdk::lambda::Effect::HttpRequest(mochiclaw_sdk::lambda::HttpEffect {
+            method: String::new(),
+            url: String::new(),
+            headers: HashMap::new(),
+            body: Some("failed to parse ExecuteToolInput".to_string()),
+            timeout_ms: 0,
+        })))?;
 
     // Get workspace from config (injected by host)
-    let workspace = match config::get("workspace") {
+    let workspace = match mochiclaw_sdk::config::get("workspace") {
         Ok(Some(w)) => w,
         Ok(None) => ".".to_string(),
         Err(_) => ".".to_string(),
@@ -138,31 +142,19 @@ fn handle_execute_tool(params: LambdaInput) -> FnResult<LambdaOutput> {
     };
 
     match result {
-        Ok(result_str) => {
-            let response = ToolExecutionResponse {
-                result: result_str,
-                error: None,
-            };
-            Ok(LambdaOutput {
-                effects: vec![],
-                result: response.to_bytes()?,
-                new_state: Vec::new(),
-            })
-        }
+        Ok(result_str) => Ok(rmp_serde::to_vec(&ExecuteToolOutput {
+            result: result_str,
+            error: None,
+        }).unwrap_or_default()),
         Err(err_str) => error_output(err_str),
     }
 }
 
-fn error_output(message: String) -> FnResult<LambdaOutput> {
-    let response = ToolExecutionResponse {
+fn error_output(message: String) -> Result<Vec<u8>, mochiclaw_sdk::lambda::SuspendSignal> {
+    Ok(rmp_serde::to_vec(&ExecuteToolOutput {
         result: String::new(),
         error: Some(message),
-    };
-    Ok(LambdaOutput {
-        effects: vec![],
-        result: response.to_bytes()?,
-        new_state: Vec::new(),
-    })
+    }).unwrap_or_default())
 }
 
 // ============================================================================

@@ -8,11 +8,11 @@ use crate::logging_utils::{cleanup_old_logs, resolve_log_dir};
 
 use mochiclaw_config::{ChannelConfig, Config};
 use mochiclaw_core::{
-    AgentLoop, AsyncHttpExecutor, ContextBuilder, LambdaHost, MessageBus, discover,
+    lambda_call_typed, AgentLoop, AsyncHttpExecutor, ContextBuilder, HistoryStore, LambdaHost,
+    MessageBus, discover,
 };
 use mochiclaw_sdk::lambda::{
-    Action, CheckLoginInput, CheckLoginOutput, Effect, LambdaInput, LambdaOutput, LoginInput,
-    LoginOutput,
+    Action, CheckLoginInput, CheckLoginOutput, LoginInput, LoginOutput,
 };
 
 pub async fn start(config: Config, config_path: PathBuf) -> Result<()> {
@@ -120,7 +120,7 @@ pub async fn onboard(config_path: PathBuf) -> Result<()> {
     Ok(())
 }
 
-/// Login to a channel lambda using lambda_function
+/// Login to a channel lambda using lambda_main
 pub async fn login(lambda_name: &str, mut config: Config, config_path: PathBuf) -> Result<()> {
     // Discover lambdas from configured lambda directories
     let mut discovered_lambda = None;
@@ -158,11 +158,12 @@ pub async fn login(lambda_name: &str, mut config: Config, config_path: PathBuf) 
     lambda_host.load_lambda(&manifest.name, &wasm_path, &manifest, &Default::default())?;
     tracing::info!("loaded lambda '{}'", manifest.name);
 
-    // Wrap in Arc for HTTP executor
+    // Wrap in Arc for HTTP executor and history store
     let lambda_host = Arc::new(lambda_host);
 
-    // Create HTTP executor for this lambda
-    let http_executor = AsyncHttpExecutor::new(Arc::clone(&lambda_host));
+    // Create HTTP executor and history store for this lambda
+    let http_executor = Arc::new(AsyncHttpExecutor::new(Arc::clone(&lambda_host)));
+    let history_store = Arc::new(HistoryStore::new());
 
     // Get lambda config for login
     let lambda_config = config
@@ -171,50 +172,19 @@ pub async fn login(lambda_name: &str, mut config: Config, config_path: PathBuf) 
         .cloned()
         .unwrap_or_default();
 
-    // Step 1: Call lambda_function with Action::Login
-    let mut current_state = Vec::new();
-    let login_input = LambdaInput {
-        version: 1,
-        action: Action::Login,
-        state: current_state.clone(),
-        payload: rmp_serde::to_vec(&LoginInput {
+    // Call Login action using lambda_call_typed (handles suspend/resume automatically)
+    let login_result: LoginOutput = lambda_call_typed(
+        &lambda_host,
+        http_executor.clone(),
+        history_store.clone(),
+        &format!("login_{}", lambda_name),
+        &manifest.name,
+        Action::Login,
+        &LoginInput {
             config: serde_json::to_vec(&lambda_config)?,
-        })?,
-        effect_results: Vec::new(),
-    };
-
-    let login_output: LambdaOutput =
-        lambda_host.call(&manifest.name, "lambda_function", &login_input)?;
-
-    // Use loop mechanism: if effects returned, execute and call again with effect_results
-    let login_result = if !login_output.effects.is_empty() {
-        // Execute HTTP effect
-        let Effect::HttpRequest(effect) = &login_output.effects[0];
-        let raw_response = http_executor
-            .execute(&manifest.name, effect.clone())
-            .await?;
-
-        // Loop: call Login again with effect_results
-        current_state = login_output.new_state;
-        let login_input = LambdaInput {
-            version: 1,
-            action: Action::Login,
-            state: current_state.clone(),
-            payload: Vec::new(),
-            effect_results: vec![mochiclaw_sdk::lambda::EffectResult {
-                success: true,
-                response: Some(raw_response),
-                error: None,
-            }],
-        };
-
-        let login_output: LambdaOutput =
-            lambda_host.call(&manifest.name, "lambda_function", &login_input)?;
-        rmp_serde::from_slice::<LoginOutput>(&login_output.result)?
-    } else {
-        // No effects means we got LoginOutput directly (already logged in or error)
-        rmp_serde::from_slice::<LoginOutput>(&login_output.result)?
-    };
+        },
+    )
+    .await?;
 
     match login_result.status.as_str() {
         "logged_in" => {
@@ -242,50 +212,19 @@ pub async fn login(lambda_name: &str, mut config: Config, config_path: PathBuf) 
                     loop {
                         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
-                        // Call lambda_function with Action::CheckLogin
-                        let check_input = LambdaInput {
-                            version: 1,
-                            action: Action::CheckLogin,
-                            state: Vec::new(),
-                            payload: rmp_serde::to_vec(&CheckLoginInput {
+                        // Call CheckLogin action using lambda_call_typed
+                        let check_result: CheckLoginOutput = lambda_call_typed(
+                            &lambda_host,
+                            http_executor.clone(),
+                            history_store.clone(),
+                            &format!("check_login_{}", temp_token),
+                            &manifest.name,
+                            Action::CheckLogin,
+                            &CheckLoginInput {
                                 temp_token: temp_token.clone(),
-                            })?,
-                            effect_results: Vec::new(),
-                        };
-
-                        let check_output: LambdaOutput =
-                            lambda_host.call(&manifest.name, "lambda_function", &check_input)?;
-
-                        // Use loop mechanism
-                        let check_result = if !check_output.effects.is_empty() {
-                            // Execute HTTP effect
-                            let Effect::HttpRequest(effect) = &check_output.effects[0];
-                            let raw_response = http_executor
-                                .execute(&manifest.name, effect.clone())
-                                .await?;
-
-                            // Loop: call CheckLogin again with effect_results
-                            let check_input = LambdaInput {
-                                version: 1,
-                                action: Action::CheckLogin,
-                                state: check_output.new_state,
-                                payload: Vec::new(),
-                                effect_results: vec![mochiclaw_sdk::lambda::EffectResult {
-                                    success: true,
-                                    response: Some(raw_response),
-                                    error: None,
-                                }],
-                            };
-
-                            let check_output: LambdaOutput = lambda_host.call(
-                                &manifest.name,
-                                "lambda_function",
-                                &check_input,
-                            )?;
-                            rmp_serde::from_slice::<CheckLoginOutput>(&check_output.result)?
-                        } else {
-                            anyhow::bail!("check_login returned no result");
-                        };
+                            },
+                        )
+                        .await?;
 
                         match check_result.status.as_str() {
                             "confirmed" => {

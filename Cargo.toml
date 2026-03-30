@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "sdk",
+    "sdk-macro",
     "config",
     "lambda",
     "core",
@@ -41,3 +42,6 @@ extism-pdk = "1"
 extism-convert = { version = "1", features = ["msgpack"] }
 tempfile = "3"
 base64 = "0.22"
+proc-macro2 = "1"
+quote = "1"
+syn = "2"

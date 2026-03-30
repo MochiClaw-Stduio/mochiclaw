@@ -17,6 +17,3 @@ mod types;
 // Re-export for backward compatibility
 pub use constants::*;
 pub use types::WeixinConfig;
-
-// Re-export lambda functions
-pub use api::lambda_function;
