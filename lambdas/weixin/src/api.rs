@@ -292,7 +292,9 @@ fn handle_format_send(
     let route_tag = get_route_tag();
 
     // Get context_token (one-time use)
-    let context_token = pop_context_token(&input.to_user_id);
+    let context_token: Option<String> = ctx.step("pop_context_token", |_ctx| {
+        Ok(pop_context_token(&input.to_user_id))
+    })?;
 
     if context_token.is_none() {
         // No pending context_token - send error message
