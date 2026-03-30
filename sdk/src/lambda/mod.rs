@@ -117,8 +117,8 @@ pub enum LambdaOutput {
     Finished(Vec<u8>),
     /// 任务挂起，需要执行 Effect，并带回本次运行新产生的增量历史
     Suspended {
-        /// 需要执行的 Effect
-        effect: Effect,
+        /// 需要执行的 Effect (boxed to reduce error size)
+        effect: Box<Effect>,
         /// 步骤唯一标识
         step_id: String,
         /// 本次重放新产生的 step 结果，主机需将其合并到历史中
@@ -135,15 +135,15 @@ pub enum LambdaOutput {
 pub struct SuspendSignal {
     /// 步骤唯一标识
     pub step_id: String,
-    /// 需要执行的 Effect
-    pub effect: Effect,
+    /// 需要执行的 Effect (boxed to reduce error size)
+    pub effect: Box<Effect>,
 }
 
 impl SuspendSignal {
     pub fn new(step_id: &str, effect: Effect) -> Self {
         Self {
             step_id: step_id.to_string(),
-            effect,
+            effect: Box::new(effect),
         }
     }
 }
@@ -155,7 +155,7 @@ pub struct Context {
     /// 本次运行新产生的增量历史
     new_history: HashMap<String, Vec<u8>>,
     /// 等待执行的 effect（挂起时设置）
-    pending_effect: Option<(String, Effect)>,
+    pending_effect: Option<(String, Box<Effect>)>,
     /// 自动计数器：base_id -> 使用次数（解决循环中 ID 重复问题）
     counter: HashMap<String, u32>,
 }
@@ -178,16 +178,16 @@ impl Context {
         F: FnOnce(&mut Context) -> Result<T, SuspendSignal>,
     {
         // 1. 检查旧历史
-        if let Some(bytes) = self.history.get(step_id) {
-            if let Ok(result) = rmp_serde::from_slice(bytes) {
-                return Ok(result);
-            }
+        if let Some(bytes) = self.history.get(step_id)
+            && let Ok(result) = rmp_serde::from_slice(bytes)
+        {
+            return Ok(result);
         }
         // 2. 检查本次运行新产生的增量历史
-        if let Some(bytes) = self.new_history.get(step_id) {
-            if let Ok(result) = rmp_serde::from_slice(bytes) {
-                return Ok(result);
-            }
+        if let Some(bytes) = self.new_history.get(step_id)
+            && let Ok(result) = rmp_serde::from_slice(bytes)
+        {
+            return Ok(result);
         }
 
         // 3. 执行真实逻辑
@@ -220,25 +220,25 @@ impl Context {
         let step_id = format!("{}_{}", base_id, count);
 
         // 1. 检查旧历史
-        if let Some(bytes) = self.history.get(&step_id) {
-            if let Ok(result) = rmp_serde::from_slice(bytes) {
-                return Ok(result);
-            }
+        if let Some(bytes) = self.history.get(&step_id)
+            && let Ok(result) = rmp_serde::from_slice(bytes)
+        {
+            return Ok(result);
         }
         // 2. 检查本次运行新产生的增量历史
-        if let Some(bytes) = self.new_history.get(&step_id) {
-            if let Ok(result) = rmp_serde::from_slice(bytes) {
-                return Ok(result);
-            }
+        if let Some(bytes) = self.new_history.get(&step_id)
+            && let Ok(result) = rmp_serde::from_slice(bytes)
+        {
+            return Ok(result);
         }
 
         // 3. 需要执行 HTTP 请求 - 设置 pending_effect 并抛出中断信号
-        self.pending_effect = Some((step_id.clone(), Effect::HttpRequest(req.clone())));
+        self.pending_effect = Some((step_id.clone(), Box::new(Effect::HttpRequest(req.clone()))));
         Err(SuspendSignal::new(&step_id, Effect::HttpRequest(req)))
     }
 
     /// 获取待执行的 effect（由 #[mochi_main] 宏调用）
-    pub fn take_pending_effect(&mut self) -> Option<(String, Effect)> {
+    pub fn take_pending_effect(&mut self) -> Option<(String, Box<Effect>)> {
         self.pending_effect.take()
     }
 

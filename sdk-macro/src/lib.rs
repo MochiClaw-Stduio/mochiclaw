@@ -54,7 +54,7 @@ pub fn mochi_main(_attr: TokenStream, input: TokenStream) -> TokenStream {
                 Err(signal) => {
                     // 取出 pending effect 和 new_history
                     let (step_id, effect) = ctx.take_pending_effect().unwrap_or_else(|| {
-                        (signal.step_id, signal.effect)
+                        (signal.step_id, Box::new(*signal.effect))
                     });
                     let new_history = ctx.into_new_history();
 
